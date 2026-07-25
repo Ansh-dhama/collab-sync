@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Collab Docs</title>
+
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f1f3f4;
+        }
+
+        .top-bar {
+            height: 56px;
+            background: white;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            gap: 15px;
+        }
+
+        .logo {
+            font-size: 22px;
+            font-weight: bold;
+            color: #1a73e8;
+        }
+
+        .title-input {
+            border: none;
+            font-size: 18px;
+            outline: none;
+            width: 250px;
+        }
+
+        .toolbar {
+            height: 45px;
+            background: white;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            gap: 10px;
+        }
+
+        button {
+            padding: 7px 12px;
+            border: 1px solid #ccc;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #f1f3f4;
+        }
+
+        .blue-btn {
+            background: #1a73e8;
+            color: white;
+            border: none;
+        }
+
+        .blue-btn:hover {
+            background: #0b57d0;
+        }
+
+        input {
+            padding: 7px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        .main {
+            display: flex;
+            height: calc(100vh - 101px);
+        }
+
+        .left-panel {
+            width: 260px;
+            background: white;
+            border-right: 1px solid #ddd;
+            padding: 15px;
+            box-sizing: border-box;
+        }
+
+        .editor-area {
+            flex: 1;
+            overflow: auto;
+            padding: 30px;
+        }
+
+        .paper {
+            background: white;
+            width: 760px;
+            min-height: 900px;
+            margin: auto;
+            padding: 70px;
+            box-sizing: border-box;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 760px;
+            border: none;
+            outline: none;
+            resize: none;
+            font-size: 18px;
+            line-height: 1.6;
+            font-family: Arial, sans-serif;
+        }
+
+        .status {
+            font-size: 13px;
+            margin-bottom: 10px;
+            color: #444;
+        }
+
+        .connected {
+            color: green;
+            font-weight: bold;
+        }
+
+        .disconnected {
+            color: red;
+            font-weight: bold;
+        }
+
+        .small-label {
+            font-size: 12px;
+            color: #555;
+            margin-top: 10px;
+            display: block;
+        }
+
+        .log-box {
+            background: #111;
+            color: #00ff88;
+            height: 180px;
+            overflow-y: auto;
+            font-size: 12px;
+            padding: 8px;
+            margin-top: 10px;
+            white-space: pre-wrap;
+        }
+
+        .presence {
+            font-size: 13px;
+            color: #1a73e8;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="top-bar">
+    <div class="logo">Collab Docs</div>
+    <input id="title" class="title-input" value="Untitled Document">
+    <span id="connectionStatus" class="disconnected">Disconnected</span>
+</div>
+
+<div class="toolbar">
+    <button class="blue-btn" onclick="createDocument()">Create Doc</button>
+    <button onclick="loadDocument()">Load Doc</button>
+    <button onclick="connectWebSocket()">Connect</button>
+    <button onclick="disconnectWebSocket()">Disconnect</button>
+
+    <span>Version: <b id="version">0</b></span>
+</div>
+
+<div class="main">
+
+    <div class="left-panel">
+        <label class="small-label">Document ID</label>
+        <input id="documentId" placeholder="Paste document id" style="width:100%;">
+
+        <label class="small-label">Client ID</label>
+        <input id="clientId" value="user-A" style="width:100%;">
+
+        <div class="status">
+            <p><b>Active Clients:</b></p>
+            <p id="activeClients">-</p>
+        </div>
+
+        <div class="presence">
+            <b>Presence:</b>
+            <p id="presenceText">No activity</p>
+        </div>
+
+        <h4>Logs</h4>
+        <div id="logs" class="log-box"></div>
+    </div>
+
+    <div class="editor-area">
+        <div class="paper">
+            <textarea id="editor"
+                      placeholder="Start typing here..."
+                      oninput="handleEditorChange()"
+                      onkeyup="sendPresence(true)"
+                      onclick="sendPresence(false)"
+                      onblur="sendPresence(false)"></textarea>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    const API_BASE = "http://localhost:8081";
+    const WS_BASE = "ws://localhost:8081";
+
+    let socket = null;
+    let currentVersion = 0;
+    let lastContent = "";
+    let operationCounter = 1;
+    let suppressEditorChange = false;
+
+    function log(message) {
+        const logs = document.getElementById("logs");
+        logs.textContent += message + "\n";
+        logs.scrollTop = logs.scrollHeight;
+    }
+
+    function getDocumentId() {
+        return document.getElementById("documentId").value.trim();
+    }
+
+    function getClientId() {
+        return document.getElementById("clientId").value.trim();
+    }
+
+    function setEditorContent(content) {
+        suppressEditorChange = true;
+        document.getElementById("editor").value = content || "";
+        lastContent = content || "";
+        suppressEditorChange = false;
+    }
+
+    function updateVersion(version) {
+        currentVersion = version || 0;
+        document.getElementById("version").innerText = currentVersion;
+    }
+
+    async function createDocument() {
+        const title = document.getElementById("title").value || "Untitled Document";
+        const clientId = getClientId() || "user-A";
+
+        const body = {
+            title: title,
+            initialContent: "",
+            createdBy: clientId
+        };
+
+        try {
+            const response = await fetch(API_BASE + "/api/documents", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(body)
+            });
+
+            const data = await response.json();
+
+            const documentId = data.id || data.documentId;
+
+            document.getElementById("documentId").value = documentId;
+            setEditorContent(data.currentContent);
+            updateVersion(data.currentVersion);
+
+            log("Document created: " + documentId);
+        } catch (error) {
+            log("Create document error: " + error.message);
+        }
+    }
+
+    async function loadDocument() {
+        const documentId = getDocumentId();
+
+        if (!documentId) {
+            alert("Enter document id");
+            return;
+        }
+
+        try {
+            const response = await fetch(API_BASE + "/api/documents/" + documentId);
+            const data = await response.json();
+
+            setEditorContent(data.currentContent);
+            updateVersion(data.currentVersion);
+
+            if (data.title) {
+                document.getElementById("title").value = data.title;
+            }
+
+            log("Document loaded");
+        } catch (error) {
+            log("Load document error: " + error.message);
+        }
+    }
+
+    function connectWebSocket() {
+        const documentId = getDocumentId();
+        const clientId = getClientId();
+
+        if (!documentId || !clientId) {
+            alert("Document ID and Client ID required");
+            return;
+        }
+
+        const url = WS_BASE
+            + "/ws/documents/"
+            + documentId
+            + "?clientId="
+            + encodeURIComponent(clientId)
+            + "&lastKnownVersion="
+            + currentVersion;
+
+        socket = new WebSocket(url);
+
+        socket.onopen = function () {
+            document.getElementById("connectionStatus").innerText = "Connected";
+            document.getElementById("connectionStatus").className = "connected";
+            log("WebSocket connected");
+        };
+
+        socket.onmessage = function (event) {
+            const message = JSON.parse(event.data);
+            log("Received: " + message.messageType);
+
+            if (message.messageType === "CONNECTED") {
+                updateActiveClients(message.activeClients);
+            }
+
+            if (message.messageType === "DOCUMENT_SYNC") {
+                setEditorContent(message.currentContent);
+                updateVersion(message.currentVersion);
+            }
+
+            if (message.messageType === "OPERATION_APPLIED") {
+                setEditorContent(message.currentContent);
+                updateVersion(message.currentVersion || message.serverVersion);
+                updateActiveClients(message.activeClients);
+            }
+
+            if (message.messageType === "CLIENT_JOINED" || message.messageType === "CLIENT_LEFT") {
+                updateActiveClients(message.activeClients);
+            }
+
+            if (message.messageType === "PRESENCE_UPDATE") {
+                document.getElementById("presenceText").innerText =
+                    message.clientId
+                    + " typing: "
+                    + message.typing
+                    + ", cursor: "
+                    + message.cursorPosition;
+            }
+
+            if (message.messageType === "ERROR") {
+                alert(message.message);
+            }
+        };
+
+        socket.onclose = function () {
+            document.getElementById("connectionStatus").innerText = "Disconnected";
+            document.getElementById("connectionStatus").className = "disconnected";
+            log("WebSocket disconnected");
+        };
+
+        socket.onerror = function () {
+            log("WebSocket error");
+        };
+    }
+
+    function disconnectWebSocket() {
+        if (socket) {
+            socket.close();
+            socket = null;
+        }
+    }
+
+    function updateActiveClients(activeClients) {
+        if (!activeClients) {
+            return;
+        }
+
+        document.getElementById("activeClients").innerText =
+            activeClients.join(", ");
+    }
+
+    function handleEditorChange() {
+        if (suppressEditorChange) {
+            return;
+        }
+
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            lastContent = document.getElementById("editor").value;
+            return;
+        }
+
+        const editor = document.getElementById("editor");
+        const newContent = editor.value;
+        const oldContent = lastContent;
+
+        const diff = findSimpleDiff(oldContent, newContent);
+
+        if (!diff) {
+            return;
+        }
+
+        if (diff.type === "INSERT") {
+            sendOperation({
+                type: "INSERT",
+                position: diff.position,
+                text: diff.text,
+                length: null
+            });
+        }
+
+        if (diff.type === "DELETE") {
+            sendOperation({
+                type: "DELETE",
+                position: diff.position,
+                text: null,
+                length: diff.length
+            });
+        }
+
+        lastContent = newContent;
+    }
+
+    function findSimpleDiff(oldText, newText) {
+        if (oldText === newText) {
+            return null;
+        }
+
+        let start = 0;
+
+        while (
+            start < oldText.length &&
+            start < newText.length &&
+            oldText[start] === newText[start]
+        ) {
+            start++;
+        }
+
+        let oldEnd = oldText.length - 1;
+        let newEnd = newText.length - 1;
+
+        while (
+            oldEnd >= start &&
+            newEnd >= start &&
+            oldText[oldEnd] === newText[newEnd]
+        ) {
+            oldEnd--;
+            newEnd--;
+        }
+
+        const removedLength = oldEnd - start + 1;
+        const insertedText = newText.substring(start, newEnd + 1);
+
+        if (insertedText.length > 0 && removedLength <= 0) {
+            return {
+                type: "INSERT",
+                position: start,
+                text: insertedText
+            };
+        }
+
+        if (removedLength > 0 && insertedText.length === 0) {
+            return {
+                type: "DELETE",
+                position: start,
+                length: removedLength
+            };
+        }
+
+        // Replacement case: delete old text first, then insert new text.
+        // For now, handle it as DELETE only to keep frontend simple.
+        return {
+            type: "DELETE",
+            position: start,
+            length: removedLength
+        };
+    }
+
+    function sendOperation(operation) {
+        const clientId = getClientId();
+
+        const message = {
+            messageType: "OPERATION",
+            operationId: clientId + "-op-" + Date.now() + "-" + operationCounter++,
+            baseVersion: currentVersion,
+            type: operation.type,
+            position: operation.position,
+            text: operation.text,
+            length: operation.length
+        };
+
+        socket.send(JSON.stringify(message));
+        log("Sent " + operation.type + " at " + operation.position);
+    }
+
+    function sendPresence(isTyping) {
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            return;
+        }
+
+        const editor = document.getElementById("editor");
+
+        const message = {
+            messageType: "PRESENCE",
+            cursorPosition: editor.selectionStart,
+            typing: isTyping,
+            selectionStart: editor.selectionStart,
+            selectionEnd: editor.selectionEnd
+        };
+
+        socket.send(JSON.stringify(message));
+    }
+</script>
+
+</body>
+</html>

@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Collab Sync Engine Demo</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 30px;
+            background: #f5f5f5;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+        }
+
+        input, textarea, button {
+            padding: 10px;
+            margin: 5px 0;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        button {
+            cursor: pointer;
+            background: #1976d2;
+            color: white;
+            border: none;
+            border-radius: 5px;
+        }
+
+        button:hover {
+            background: #0d47a1;
+        }
+
+        textarea {
+            height: 250px;
+            font-size: 16px;
+        }
+
+        .row {
+            display: flex;
+            gap: 10px;
+        }
+
+        .row > div {
+            flex: 1;
+        }
+
+        .status {
+            padding: 10px;
+            background: #eeeeee;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+
+        .log {
+            height: 180px;
+            overflow-y: auto;
+            background: #111;
+            color: #00ff88;
+            padding: 10px;
+            font-size: 13px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <h2>Real-Time Collaborative Document Demo</h2>
+
+    <div class="row">
+        <div>
+            <label>Document ID</label>
+            <input id="documentId" placeholder="Enter document id">
+        </div>
+
+        <div>
+            <label>Client ID</label>
+            <input id="clientId" value="user-A">
+        </div>
+    </div>
+
+    <div class="row">
+        <div>
+            <button onclick="loadDocument()">Load Document</button>
+        </div>
+
+        <div>
+            <button onclick="connectWebSocket()">Connect WebSocket</button>
+        </div>
+
+        <div>
+            <button onclick="disconnectWebSocket()">Disconnect</button>
+        </div>
+    </div>
+
+    <div class="status">
+        <b>Status:</b> <span id="status">Not connected</span><br>
+        <b>Current Version:</b> <span id="currentVersion">0</span><br>
+        <b>Active Clients:</b> <span id="activeClients">-</span>
+    </div>
+
+    <label>Document Content</label>
+    <textarea id="editor"
+              placeholder="Document content will appear here"
+              onkeyup="sendPresence(true)"
+              onblur="sendPresence(false)"></textarea>
+
+    <div class="row">
+        <div>
+            <label>Insert Text</label>
+            <input id="insertText" placeholder="Text to insert">
+            <button onclick="sendInsertOperation()">Send INSERT at Cursor</button>
+        </div>
+
+        <div>
+            <label>Delete Length</label>
+            <input id="deleteLength" type="number" value="1">
+            <button onclick="sendDeleteOperation()">Send DELETE at Cursor</button>
+        </div>
+    </div>
+
+    <h3>Logs</h3>
+    <div id="logs" class="log"></div>
+
+</div>
+
+<script>
+    let socket = null;
+    let currentVersion = 0;
+    let operationCounter = 1;
+
+    const backendBaseUrl = "http://localhost:8081";
+
+    function log(message) {
+        const logs = document.getElementById("logs");
+        const time = new Date().toLocaleTimeString();
+        logs.innerHTML += `[${time}] ${message}<br>`;
+        logs.scrollTop = logs.scrollHeight;
+    }
+
+    function getDocumentId() {
+        return document.getElementById("documentId").value.trim();
+    }
+
+    function getClientId() {
+        return document.getElementById("clientId").value.trim();
+    }
+
+    async function loadDocument() {
+        const documentId = getDocumentId();
+
+        if (!documentId) {
+            alert("Please enter document id");
+            return;
+        }
+
+        try {
+            const response = await fetch(`${backendBaseUrl}/api/documents/${documentId}`);
+            const data = await response.json();
+
+            document.getElementById("editor").value = data.currentContent;
+            currentVersion = data.currentVersion;
+
+            document.getElementById("currentVersion").innerText = currentVersion;
+
+            log("Document loaded: " + JSON.stringify(data));
+        } catch (error) {
+            log("Load document error: " + error.message);
+        }
+    }
+
+    function connectWebSocket() {
+        const documentId = getDocumentId();
+        const clientId = getClientId();
+
+        if (!documentId || !clientId) {
+            alert("Document ID and Client ID are required");
+            return;
+        }
+
+        const wsUrl =
+            `ws://localhost:8081/ws/documents/${documentId}?clientId=${clientId}&lastKnownVersion=${currentVersion}`;
+
+        socket = new WebSocket(wsUrl);
+
+        socket.onopen = function () {
+            document.getElementById("status").innerText = "Connected";
+            log("WebSocket connected");
+        };
+
+        socket.onmessage = function (event) {
+            const message = JSON.parse(event.data);
+
+            log("Received: " + JSON.stringify(message));
+
+            if (message.messageType === "CONNECTED") {
+                if (message.activeClients) {
+                    document.getElementById("activeClients").innerText =
+                        message.activeClients.join(", ");
+                }
+            }
+
+            if (message.messageType === "DOCUMENT_SYNC") {
+                document.getElementById("editor").value = message.currentContent;
+                currentVersion = message.currentVersion;
+                document.getElementById("currentVersion").innerText = currentVersion;
+            }
+
+            if (message.messageType === "OPERATION_APPLIED") {
+                document.getElementById("editor").value = message.currentContent;
+                currentVersion = message.currentVersion || message.serverVersion;
+                document.getElementById("currentVersion").innerText = currentVersion;
+
+                if (message.activeClients) {
+                    document.getElementById("activeClients").innerText =
+                        message.activeClients.join(", ");
+                }
+            }
+
+            if (message.messageType === "CLIENT_JOINED" || message.messageType === "CLIENT_LEFT") {
+                if (message.activeClients) {
+                    document.getElementById("activeClients").innerText =
+                        message.activeClients.join(", ");
+                }
+            }
+
+            if (message.messageType === "PRESENCE_UPDATE") {
+                log(`${message.clientId} typing=${message.typing}, cursor=${message.cursorPosition}`);
+            }
+
+            if (message.messageType === "ERROR") {
+                alert(message.message);
+            }
+        };
+
+        socket.onclose = function () {
+            document.getElementById("status").innerText = "Disconnected";
+            log("WebSocket disconnected");
+        };
+
+        socket.onerror = function () {
+            log("WebSocket error");
+        };
+    }
+
+    function disconnectWebSocket() {
+        if (socket) {
+            socket.close();
+            socket = null;
+        }
+    }
+
+    function sendInsertOperation() {
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            alert("WebSocket is not connected");
+            return;
+        }
+
+        const editor = document.getElementById("editor");
+        const insertText = document.getElementById("insertText").value;
+
+        if (!insertText) {
+            alert("Please enter text to insert");
+            return;
+        }
+
+        const position = editor.selectionStart;
+
+        const message = {
+            messageType: "OPERATION",
+            operationId: getClientId() + "-op-" + operationCounter++,
+            baseVersion: currentVersion,
+            type: "INSERT",
+            position: position,
+            text: insertText,
+            length: null
+        };
+
+        socket.send(JSON.stringify(message));
+        log("Sent INSERT: " + JSON.stringify(message));
+    }
+
+    function sendDeleteOperation() {
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            alert("WebSocket is not connected");
+            return;
+        }
+
+        const editor = document.getElementById("editor");
+        const position = editor.selectionStart;
+        const length = Number(document.getElementById("deleteLength").value);
+
+        const message = {
+            messageType: "OPERATION",
+            operationId: getClientId() + "-op-" + operationCounter++,
+            baseVersion: currentVersion,
+            type: "DELETE",
+            position: position,
+            text: null,
+            length: length
+        };
+
+        socket.send(JSON.stringify(message));
+        log("Sent DELETE: " + JSON.stringify(message));
+    }
+
+    function sendPresence(isTyping) {
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            return;
+        }
+
+        const editor = document.getElementById("editor");
+
+        const message = {
+            messageType: "PRESENCE",
+            cursorPosition: editor.selectionStart,
+            typing: isTyping,
+            selectionStart: editor.selectionStart,
+            selectionEnd: editor.selectionEnd
+        };
+
+        socket.send(JSON.stringify(message));
+    }
+</script>
+
+</body>
+</html>
