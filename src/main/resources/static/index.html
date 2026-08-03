@@ -2,525 +2,214 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Collab Docs</title>
-
-    <style>
-        body {
-            margin: 0;
-            font-family: Arial, sans-serif;
-            background: #f1f3f4;
-        }
-
-        .top-bar {
-            height: 56px;
-            background: white;
-            border-bottom: 1px solid #ddd;
-            display: flex;
-            align-items: center;
-            padding: 0 20px;
-            gap: 15px;
-        }
-
-        .logo {
-            font-size: 22px;
-            font-weight: bold;
-            color: #1a73e8;
-        }
-
-        .title-input {
-            border: none;
-            font-size: 18px;
-            outline: none;
-            width: 250px;
-        }
-
-        .toolbar {
-            height: 45px;
-            background: white;
-            border-bottom: 1px solid #ddd;
-            display: flex;
-            align-items: center;
-            padding: 0 20px;
-            gap: 10px;
-        }
-
-        button {
-            padding: 7px 12px;
-            border: 1px solid #ccc;
-            background: white;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-
-        button:hover {
-            background: #f1f3f4;
-        }
-
-        .blue-btn {
-            background: #1a73e8;
-            color: white;
-            border: none;
-        }
-
-        .blue-btn:hover {
-            background: #0b57d0;
-        }
-
-        input {
-            padding: 7px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-        }
-
-        .main {
-            display: flex;
-            height: calc(100vh - 101px);
-        }
-
-        .left-panel {
-            width: 260px;
-            background: white;
-            border-right: 1px solid #ddd;
-            padding: 15px;
-            box-sizing: border-box;
-        }
-
-        .editor-area {
-            flex: 1;
-            overflow: auto;
-            padding: 30px;
-        }
-
-        .paper {
-            background: white;
-            width: 760px;
-            min-height: 900px;
-            margin: auto;
-            padding: 70px;
-            box-sizing: border-box;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-        }
-
-        textarea {
-            width: 100%;
-            min-height: 760px;
-            border: none;
-            outline: none;
-            resize: none;
-            font-size: 18px;
-            line-height: 1.6;
-            font-family: Arial, sans-serif;
-        }
-
-        .status {
-            font-size: 13px;
-            margin-bottom: 10px;
-            color: #444;
-        }
-
-        .connected {
-            color: green;
-            font-weight: bold;
-        }
-
-        .disconnected {
-            color: red;
-            font-weight: bold;
-        }
-
-        .small-label {
-            font-size: 12px;
-            color: #555;
-            margin-top: 10px;
-            display: block;
-        }
-
-        .log-box {
-            background: #111;
-            color: #00ff88;
-            height: 180px;
-            overflow-y: auto;
-            font-size: 12px;
-            padding: 8px;
-            margin-top: 10px;
-            white-space: pre-wrap;
-        }
-
-        .presence {
-            font-size: 13px;
-            color: #1a73e8;
-            margin-top: 10px;
-        }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Real-time collaborative document editor">
+    <title>CollabSpace</title>
+    <link rel="stylesheet" href="/style.css">
 </head>
-
 <body>
-
-<div class="top-bar">
-    <div class="logo">Collab Docs</div>
-    <input id="title" class="title-input" value="Untitled Document">
-    <span id="connectionStatus" class="disconnected">Disconnected</span>
-</div>
-
-<div class="toolbar">
-    <button class="blue-btn" onclick="createDocument()">Create Doc</button>
-    <button onclick="loadDocument()">Load Doc</button>
-    <button onclick="connectWebSocket()">Connect</button>
-    <button onclick="disconnectWebSocket()">Disconnect</button>
-
-    <span>Version: <b id="version">0</b></span>
-</div>
-
-<div class="main">
-
-    <div class="left-panel">
-        <label class="small-label">Document ID</label>
-        <input id="documentId" placeholder="Paste document id" style="width:100%;">
-
-        <label class="small-label">Client ID</label>
-        <input id="clientId" value="user-A" style="width:100%;">
-
-        <div class="status">
-            <p><b>Active Clients:</b></p>
-            <p id="activeClients">-</p>
+<div class="app-shell">
+    <header class="app-header">
+        <div class="brand">
+            <div class="brand-mark" aria-hidden="true">
+                <svg viewBox="0 0 24 24" role="img">
+                    <path d="M7 3.75h7.1L19 8.65v11.6H7z"></path>
+                    <path class="brand-fold" d="M14.1 3.75v4.9H19"></path>
+                    <path class="brand-line" d="M10 12h6M10 15h6M10 18h4"></path>
+                </svg>
+            </div>
+            <div class="brand-copy">
+                <strong>CollabSpace</strong>
+                <span>Real-time collaborative editor</span>
+            </div>
         </div>
 
-        <div class="presence">
-            <b>Presence:</b>
-            <p id="presenceText">No activity</p>
+        <div class="header-document">
+            <input
+                    id="documentTitle"
+                    class="document-title"
+                    value="Untitled document"
+                    aria-label="Document title"
+                    autocomplete="off"
+            >
+            <div class="save-state">
+                <span id="saveStateIcon" class="save-state-icon"></span>
+                <span id="saveState">Ready</span>
+            </div>
         </div>
 
-        <h4>Logs</h4>
-        <div id="logs" class="log-box"></div>
+        <div class="header-actions">
+            <div id="connectionBadge" class="connection-badge offline">
+                <span class="status-dot"></span>
+                <span id="connectionStatus">Offline</span>
+            </div>
+            <button id="connectButton" class="button button-primary" type="button">
+                Connect
+            </button>
+            <button id="disconnectButton" class="button button-ghost" type="button" disabled>
+                Disconnect
+            </button>
+        </div>
+    </header>
+
+    <div class="workspace">
+        <aside class="sidebar">
+            <section class="sidebar-section">
+                <div class="section-heading">
+                    <span>Document</span>
+                </div>
+
+                <label class="field">
+                    <span>Document ID</span>
+                    <div class="input-with-action">
+                        <input id="documentId" placeholder="Create or paste an ID" autocomplete="off">
+                        <button id="copyDocumentIdButton" class="icon-button" type="button"
+                                aria-label="Copy document ID" title="Copy document ID">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M9 8.5h9.5V18H9z"></path>
+                                <path d="M5.5 5H15v3.5M5.5 5v9.5H9"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </label>
+
+                <label class="field">
+                    <span>Client ID</span>
+                    <input id="clientId" autocomplete="off">
+                </label>
+
+                <div class="button-row">
+                    <button id="createButton" class="button button-primary button-block" type="button">
+                        New document
+                    </button>
+                    <button id="loadButton" class="button button-secondary button-block" type="button">
+                        Load
+                    </button>
+                </div>
+            </section>
+
+            <section class="sidebar-section">
+                <div class="section-heading">
+                    <span>Session</span>
+                    <span id="sessionVersionBadge" class="version-badge">v0</span>
+                </div>
+
+                <div class="metric-grid">
+                    <div class="metric-card">
+                        <span class="metric-label">Words</span>
+                        <strong id="wordCount">0</strong>
+                    </div>
+                    <div class="metric-card">
+                        <span class="metric-label">Characters</span>
+                        <strong id="characterCount">0</strong>
+                    </div>
+                    <div class="metric-card">
+                        <span class="metric-label">Pending</span>
+                        <strong id="pendingCount">0</strong>
+                    </div>
+                    <div class="metric-card">
+                        <span class="metric-label">Version</span>
+                        <strong id="currentVersion">0</strong>
+                    </div>
+                </div>
+            </section>
+
+            <section class="sidebar-section">
+                <div class="section-heading">
+                    <span>Collaborators</span>
+                    <span id="activeClientCount" class="count-badge">0</span>
+                </div>
+                <div id="activeClients" class="collaborator-list">
+                    <div class="empty-state">No active collaborators</div>
+                </div>
+            </section>
+
+            <section class="sidebar-section presence-section">
+                <div class="section-heading">
+                    <span>Live activity</span>
+                </div>
+                <div id="presenceList" class="presence-list">
+                    <div class="empty-state">No recent activity</div>
+                </div>
+            </section>
+
+            <details class="activity-panel">
+                <summary>
+                    <span>Activity log</span>
+                    <span class="chevron">⌄</span>
+                </summary>
+                <div id="logs" class="logs" aria-live="polite"></div>
+            </details>
+        </aside>
+
+        <main class="editor-area">
+            <div class="editor-toolbar" role="toolbar" aria-label="Editor toolbar">
+                <div class="toolbar-group">
+                    <select id="fontSelect" aria-label="Font">
+                        <option value="Inter, Arial, sans-serif">Inter</option>
+                        <option value="Arial, sans-serif">Arial</option>
+                        <option value="Georgia, serif">Georgia</option>
+                        <option value="'Courier New', monospace">Courier New</option>
+                    </select>
+                    <select id="fontSizeSelect" aria-label="Font size">
+                        <option value="14">14</option>
+                        <option value="16" selected>16</option>
+                        <option value="18">18</option>
+                        <option value="20">20</option>
+                    </select>
+                </div>
+
+                <div class="toolbar-divider"></div>
+
+                <div class="toolbar-group">
+                    <button id="decreaseIndentButton" class="toolbar-button" type="button"
+                            title="Decrease indent" aria-label="Decrease indent">−</button>
+                    <button id="increaseIndentButton" class="toolbar-button" type="button"
+                            title="Increase indent" aria-label="Increase indent">+</button>
+                </div>
+
+                <div class="toolbar-spacer"></div>
+
+                <div class="document-health">
+                    <span id="healthIndicator" class="health-indicator"></span>
+                    <span id="healthText">Document not loaded</span>
+                </div>
+            </div>
+
+            <div class="editor-scroll">
+                <section class="paper" aria-label="Document editor">
+                    <textarea
+                            id="editor"
+                            spellcheck="true"
+                            placeholder="Start writing your document…"
+                            aria-label="Document content"
+                    ></textarea>
+                </section>
+            </div>
+
+            <footer class="editor-footer">
+                <span id="cursorPosition">Line 1, column 1</span>
+                <span id="selectionStatus">No selection</span>
+                <span>Plain text</span>
+            </footer>
+        </main>
     </div>
-
-    <div class="editor-area">
-        <div class="paper">
-            <textarea id="editor"
-                      placeholder="Start typing here..."
-                      oninput="handleEditorChange()"
-                      onkeyup="sendPresence(true)"
-                      onclick="sendPresence(false)"
-                      onblur="sendPresence(false)"></textarea>
-        </div>
-    </div>
-
 </div>
 
-<script>
-    const API_BASE = "http://localhost:8081";
-    const WS_BASE = "ws://localhost:8081";
+<div id="toastRegion" class="toast-region" aria-live="assertive" aria-atomic="true"></div>
 
-    let socket = null;
-    let currentVersion = 0;
-    let lastContent = "";
-    let operationCounter = 1;
-    let suppressEditorChange = false;
+<div id="confirmDialog" class="dialog-backdrop hidden" role="dialog" aria-modal="true"
+     aria-labelledby="dialogTitle">
+    <div class="dialog">
+        <h2 id="dialogTitle">Unsynced changes</h2>
+        <p id="dialogMessage">You have changes that have not been synchronized.</p>
+        <div class="dialog-actions">
+            <button id="dialogCancel" class="button button-secondary" type="button">Cancel</button>
+            <button id="dialogConfirm" class="button button-danger" type="button">Continue</button>
+        </div>
+    </div>
+</div>
 
-    function log(message) {
-        const logs = document.getElementById("logs");
-        logs.textContent += message + "\n";
-        logs.scrollTop = logs.scrollHeight;
-    }
-
-    function getDocumentId() {
-        return document.getElementById("documentId").value.trim();
-    }
-
-    function getClientId() {
-        return document.getElementById("clientId").value.trim();
-    }
-
-    function setEditorContent(content) {
-        suppressEditorChange = true;
-        document.getElementById("editor").value = content || "";
-        lastContent = content || "";
-        suppressEditorChange = false;
-    }
-
-    function updateVersion(version) {
-        currentVersion = version || 0;
-        document.getElementById("version").innerText = currentVersion;
-    }
-
-    async function createDocument() {
-        const title = document.getElementById("title").value || "Untitled Document";
-        const clientId = getClientId() || "user-A";
-
-        const body = {
-            title: title,
-            initialContent: "",
-            createdBy: clientId
-        };
-
-        try {
-            const response = await fetch(API_BASE + "/api/documents", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify(body)
-            });
-
-            const data = await response.json();
-
-            const documentId = data.id || data.documentId;
-
-            document.getElementById("documentId").value = documentId;
-            setEditorContent(data.currentContent);
-            updateVersion(data.currentVersion);
-
-            log("Document created: " + documentId);
-        } catch (error) {
-            log("Create document error: " + error.message);
-        }
-    }
-
-    async function loadDocument() {
-        const documentId = getDocumentId();
-
-        if (!documentId) {
-            alert("Enter document id");
-            return;
-        }
-
-        try {
-            const response = await fetch(API_BASE + "/api/documents/" + documentId);
-            const data = await response.json();
-
-            setEditorContent(data.currentContent);
-            updateVersion(data.currentVersion);
-
-            if (data.title) {
-                document.getElementById("title").value = data.title;
-            }
-
-            log("Document loaded");
-        } catch (error) {
-            log("Load document error: " + error.message);
-        }
-    }
-
-    function connectWebSocket() {
-        const documentId = getDocumentId();
-        const clientId = getClientId();
-
-        if (!documentId || !clientId) {
-            alert("Document ID and Client ID required");
-            return;
-        }
-
-        const url = WS_BASE
-            + "/ws/documents/"
-            + documentId
-            + "?clientId="
-            + encodeURIComponent(clientId)
-            + "&lastKnownVersion="
-            + currentVersion;
-
-        socket = new WebSocket(url);
-
-        socket.onopen = function () {
-            document.getElementById("connectionStatus").innerText = "Connected";
-            document.getElementById("connectionStatus").className = "connected";
-            log("WebSocket connected");
-        };
-
-        socket.onmessage = function (event) {
-            const message = JSON.parse(event.data);
-            log("Received: " + message.messageType);
-
-            if (message.messageType === "CONNECTED") {
-                updateActiveClients(message.activeClients);
-            }
-
-            if (message.messageType === "DOCUMENT_SYNC") {
-                setEditorContent(message.currentContent);
-                updateVersion(message.currentVersion);
-            }
-
-            if (message.messageType === "OPERATION_APPLIED") {
-                setEditorContent(message.currentContent);
-                updateVersion(message.currentVersion || message.serverVersion);
-                updateActiveClients(message.activeClients);
-            }
-
-            if (message.messageType === "CLIENT_JOINED" || message.messageType === "CLIENT_LEFT") {
-                updateActiveClients(message.activeClients);
-            }
-
-            if (message.messageType === "PRESENCE_UPDATE") {
-                document.getElementById("presenceText").innerText =
-                    message.clientId
-                    + " typing: "
-                    + message.typing
-                    + ", cursor: "
-                    + message.cursorPosition;
-            }
-
-            if (message.messageType === "ERROR") {
-                alert(message.message);
-            }
-        };
-
-        socket.onclose = function () {
-            document.getElementById("connectionStatus").innerText = "Disconnected";
-            document.getElementById("connectionStatus").className = "disconnected";
-            log("WebSocket disconnected");
-        };
-
-        socket.onerror = function () {
-            log("WebSocket error");
-        };
-    }
-
-    function disconnectWebSocket() {
-        if (socket) {
-            socket.close();
-            socket = null;
-        }
-    }
-
-    function updateActiveClients(activeClients) {
-        if (!activeClients) {
-            return;
-        }
-
-        document.getElementById("activeClients").innerText =
-            activeClients.join(", ");
-    }
-
-    function handleEditorChange() {
-        if (suppressEditorChange) {
-            return;
-        }
-
-        if (!socket || socket.readyState !== WebSocket.OPEN) {
-            lastContent = document.getElementById("editor").value;
-            return;
-        }
-
-        const editor = document.getElementById("editor");
-        const newContent = editor.value;
-        const oldContent = lastContent;
-
-        const diff = findSimpleDiff(oldContent, newContent);
-
-        if (!diff) {
-            return;
-        }
-
-        if (diff.type === "INSERT") {
-            sendOperation({
-                type: "INSERT",
-                position: diff.position,
-                text: diff.text,
-                length: null
-            });
-        }
-
-        if (diff.type === "DELETE") {
-            sendOperation({
-                type: "DELETE",
-                position: diff.position,
-                text: null,
-                length: diff.length
-            });
-        }
-
-        lastContent = newContent;
-    }
-
-    function findSimpleDiff(oldText, newText) {
-        if (oldText === newText) {
-            return null;
-        }
-
-        let start = 0;
-
-        while (
-            start < oldText.length &&
-            start < newText.length &&
-            oldText[start] === newText[start]
-        ) {
-            start++;
-        }
-
-        let oldEnd = oldText.length - 1;
-        let newEnd = newText.length - 1;
-
-        while (
-            oldEnd >= start &&
-            newEnd >= start &&
-            oldText[oldEnd] === newText[newEnd]
-        ) {
-            oldEnd--;
-            newEnd--;
-        }
-
-        const removedLength = oldEnd - start + 1;
-        const insertedText = newText.substring(start, newEnd + 1);
-
-        if (insertedText.length > 0 && removedLength <= 0) {
-            return {
-                type: "INSERT",
-                position: start,
-                text: insertedText
-            };
-        }
-
-        if (removedLength > 0 && insertedText.length === 0) {
-            return {
-                type: "DELETE",
-                position: start,
-                length: removedLength
-            };
-        }
-
-        // Replacement case: delete old text first, then insert new text.
-        // For now, handle it as DELETE only to keep frontend simple.
-        return {
-            type: "DELETE",
-            position: start,
-            length: removedLength
-        };
-    }
-
-    function sendOperation(operation) {
-        const clientId = getClientId();
-
-        const message = {
-            messageType: "OPERATION",
-            operationId: clientId + "-op-" + Date.now() + "-" + operationCounter++,
-            baseVersion: currentVersion,
-            type: operation.type,
-            position: operation.position,
-            text: operation.text,
-            length: operation.length
-        };
-
-        socket.send(JSON.stringify(message));
-        log("Sent " + operation.type + " at " + operation.position);
-    }
-
-    function sendPresence(isTyping) {
-        if (!socket || socket.readyState !== WebSocket.OPEN) {
-            return;
-        }
-
-        const editor = document.getElementById("editor");
-
-        const message = {
-            messageType: "PRESENCE",
-            cursorPosition: editor.selectionStart,
-            typing: isTyping,
-            selectionStart: editor.selectionStart,
-            selectionEnd: editor.selectionEnd
-        };
-
-        socket.send(JSON.stringify(message));
-    }
-</script>
-
+<script src="/app.js" defer></script>
 </body>
 </html>
