@@ -16,29 +16,45 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
-
 @Component
 public class DocumentSessionManager {
+
     private final Map<String, Map<String, WebSocketSession>> sessionsByDocument =
             new ConcurrentHashMap<>();
 
     private final Map<String, SessionInfo> sessionInfoBySessionId =
             new ConcurrentHashMap<>();
+
     private final ObjectMapper objectMapper;
+
     public DocumentSessionManager(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
     }
 
+    public void addSession(
+            String documentId,
+            String clientId,
+            WebSocketSession session,
+            long lastKnownVersion
+    ) {
+        Map<String, WebSocketSession> clientSessions =
+                sessionsByDocument.computeIfAbsent(
+                        documentId,
+                        key -> new ConcurrentHashMap<>()
+                );
 
-    public void addSession(String documentId, String clientId , WebSocketSession session , long lastKnownVersion) {
-      Map<String , WebSocketSession> clientSessons = sessionsByDocument
-                .computeIfAbsent(documentId, k -> new ConcurrentHashMap<>());
-      WebSocketSession oldSession =  clientSessons.put(clientId, session);
+        WebSocketSession oldSession = clientSessions.put(clientId, session);
 
-      if(oldSession != null && !oldSession.getId().equals(session.getId())) {
-          sessionInfoBySessionId.remove(oldSession.getId());
-          closeQuietly(oldSession);
-      }
+        // Same documentId + same clientId means reconnect.
+        // Close the old socket so one logical user has one active connection.
+        if (oldSession != null && !oldSession.getId().equals(session.getId())) {
+            sessionInfoBySessionId.remove(oldSession.getId());
+            closeQuietly(
+                    oldSession,
+                    CloseStatus.NORMAL.withReason("Replaced by a newer session")
+            );
+        }
+
         Instant now = Instant.now();
 
         SessionInfo sessionInfo = new SessionInfo(
@@ -50,24 +66,25 @@ public class DocumentSessionManager {
                 now
         );
 
-        sessionInfoBySessionId.put(session.getId(),
-             sessionInfo
-        );
+        sessionInfoBySessionId.put(session.getId(), sessionInfo);
     }
 
-    public SessionInfo removeSession(String sessionID) {
-        SessionInfo sessionInfo =sessionInfoBySessionId.remove(sessionID);
+    public SessionInfo removeSession(String sessionId) {
+        SessionInfo sessionInfo = sessionInfoBySessionId.remove(sessionId);
 
-        if(sessionInfo == null){
+        if (sessionInfo == null) {
             return null;
         }
+
         Map<String, WebSocketSession> documentSessions =
                 sessionsByDocument.get(sessionInfo.documentId());
 
         if (documentSessions != null) {
-            WebSocketSession existingSession = documentSessions.get(sessionInfo.clientId());
+            WebSocketSession existingSession =
+                    documentSessions.get(sessionInfo.clientId());
 
-            if (existingSession != null && existingSession.getId().equals(sessionID)) {
+            if (existingSession != null &&
+                    existingSession.getId().equals(sessionId)) {
                 documentSessions.remove(sessionInfo.clientId());
             }
 
@@ -75,11 +92,14 @@ public class DocumentSessionManager {
                 sessionsByDocument.remove(sessionInfo.documentId());
             }
         }
+
         return sessionInfo;
     }
+
     public SessionInfo getSessionInfo(String sessionId) {
         return sessionInfoBySessionId.get(sessionId);
     }
+
     public void updateLastSeen(String sessionId) {
         SessionInfo oldInfo = sessionInfoBySessionId.get(sessionId);
 
@@ -98,10 +118,33 @@ public class DocumentSessionManager {
 
         sessionInfoBySessionId.put(sessionId, updatedInfo);
     }
-    public Set<String>  getActiveClients(String documentId) {
-        Map<String, WebSocketSession> documentSessions = sessionsByDocument.get(documentId);
 
-        if (documentSessions == null) {
+    public void updateLastKnownVersion(String sessionId, long lastKnownVersion) {
+        SessionInfo oldInfo = sessionInfoBySessionId.get(sessionId);
+
+        if (oldInfo == null) {
+            return;
+        }
+
+        SessionInfo updatedInfo = new SessionInfo(
+                oldInfo.sessionId(),
+                oldInfo.documentId(),
+                oldInfo.clientId(),
+                lastKnownVersion,
+                oldInfo.connectedAt(),
+                Instant.now()
+        );
+
+        sessionInfoBySessionId.put(sessionId, updatedInfo);
+    }
+
+    public Set<String> getActiveClients(String documentId) {
+        cleanupClosedSessions(documentId);
+
+        Map<String, WebSocketSession> documentSessions =
+                sessionsByDocument.get(documentId);
+
+        if (documentSessions == null || documentSessions.isEmpty()) {
             return Set.of();
         }
 
@@ -112,36 +155,19 @@ public class DocumentSessionManager {
             String documentId,
             WebSocketServerMessage message
     ) throws IOException {
-        Map<String, WebSocketSession> clientSessions =
-                sessionsByDocument.get(documentId);
-
-        if (clientSessions == null || clientSessions.isEmpty()) {
-            return;
-        }
-
         String payload = objectMapper.writeValueAsString(message);
+        broadcastPayloadToDocument(documentId, null, payload);
+    }
 
-        Set<String> closedSessionIds = new HashSet<>();
+    public void broadcastToDocumentExcept(
+            String documentId,
+            String excludedSessionId,
+            String payload
+    ) {
+        broadcastPayloadToDocument(documentId, excludedSessionId, payload);
+    }
 
-        for (WebSocketSession session : clientSessions.values()) {
-            if (session == null || !session.isOpen()) {
-                if (session != null) {
-                    closedSessionIds.add(session.getId());
-                }
-                continue;
-            }
-
-            synchronized (session) {
-                if (session.isOpen()) {
-                    session.sendMessage(new TextMessage(payload));
-                }
-            }
-        }
-
-        for (String closedSessionId : closedSessionIds) {
-            removeSession(closedSessionId);
-        }
-    }public void broadcastToDocumentExcept(
+    private void broadcastPayloadToDocument(
             String documentId,
             String excludedSessionId,
             String payload
@@ -163,7 +189,8 @@ public class DocumentSessionManager {
                 return;
             }
 
-            if (session.getId().equals(excludedSessionId)) {
+            if (excludedSessionId != null &&
+                    session.getId().equals(excludedSessionId)) {
                 return;
             }
 
@@ -178,6 +205,7 @@ public class DocumentSessionManager {
             removeSession(closedSessionId);
         }
     }
+
     public void sendToSession(
             WebSocketSession session,
             WebSocketServerMessage message
@@ -188,12 +216,13 @@ public class DocumentSessionManager {
 
         String payload = objectMapper.writeValueAsString(message);
 
-        synchronized (session) {
-            if (session.isOpen()) {
-                session.sendMessage(new TextMessage(payload));
-            }
+        boolean sent = sendMessage(session, payload);
+
+        if (!sent) {
+            throw new IOException("Could not send WebSocket message");
         }
     }
+
     private boolean sendMessage(WebSocketSession session, String payload) {
         if (session == null || !session.isOpen()) {
             return false;
@@ -207,20 +236,46 @@ public class DocumentSessionManager {
                 }
             }
         } catch (IOException exception) {
-            closeQuietly(session);
+            closeQuietly(
+                    session,
+                    CloseStatus.SERVER_ERROR.withReason("Message send failed")
+            );
             return false;
         }
 
         return false;
     }
-    private void closeQuietly(WebSocketSession session) {
+
+    private void cleanupClosedSessions(String documentId) {
+        Map<String, WebSocketSession> documentSessions =
+                sessionsByDocument.get(documentId);
+
+        if (documentSessions == null || documentSessions.isEmpty()) {
+            return;
+        }
+
+        Set<String> closedSessionIds = new HashSet<>();
+
+        documentSessions.forEach((clientId, session) -> {
+            if (session == null || !session.isOpen()) {
+                if (session != null) {
+                    closedSessionIds.add(session.getId());
+                }
+            }
+        });
+
+        for (String closedSessionId : closedSessionIds) {
+            removeSession(closedSessionId);
+        }
+    }
+
+    private void closeQuietly(WebSocketSession session, CloseStatus closeStatus) {
         try {
             if (session != null && session.isOpen()) {
-                session.close();
+                session.close(closeStatus);
             }
         } catch (Exception ignored) {
+            // Ignore close errors. Session cleanup already happened.
         }
     }
 }
-
-

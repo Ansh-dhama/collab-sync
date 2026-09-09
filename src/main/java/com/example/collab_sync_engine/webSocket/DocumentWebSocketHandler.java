@@ -4,6 +4,7 @@ import com.example.collab_sync_engine.dto.*;
 import com.example.collab_sync_engine.exception.DocumentNotFoundException;
 import com.example.collab_sync_engine.model.CollaborativeDocument;
 import com.example.collab_sync_engine.repository.DocumentRepository;
+import com.example.collab_sync_engine.security.JwtService;
 import com.example.collab_sync_engine.service.OperationService;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
@@ -13,6 +14,8 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 import tools.jackson.databind.ObjectMapper;
 
 import java.net.URI;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Set;
 
 @Component
@@ -22,66 +25,127 @@ public class DocumentWebSocketHandler extends TextWebSocketHandler {
     private final DocumentRepository documentRepository;
     private final DocumentSessionManager sessionManager;
     private final ObjectMapper objectMapper;
+    private final JwtService jwtService;
 
     public DocumentWebSocketHandler(
+            JwtService jwtService,
             OperationService operationService,
             DocumentRepository documentRepository,
             DocumentSessionManager sessionManager,
             ObjectMapper objectMapper
     ) {
+        this.jwtService = jwtService;
         this.operationService = operationService;
         this.documentRepository = documentRepository;
         this.sessionManager = sessionManager;
         this.objectMapper = objectMapper;
     }
 
+   /*
+Replace only afterConnectionEstablished(...) in your DocumentWebSocketHandler.java
+and add JwtService in constructor.
+
+1. Add import:
+import com.example.collab_sync_engine.security.JwtService;
+
+2. Add field:
+private final JwtService jwtService;
+
+3. Update constructor:
+public DocumentWebSocketHandler(
+        OperationService operationService,
+        DocumentRepository documentRepository,
+        DocumentSessionManager sessionManager,
+        ObjectMapper objectMapper,
+        JwtService jwtService
+) {
+    this.operationService = operationService;
+    this.documentRepository = documentRepository;
+    this.sessionManager = sessionManager;
+    this.objectMapper = objectMapper;
+    this.jwtService = jwtService;
+}
+
+4. Replace afterConnectionEstablished with this:
+*/
+
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
-        String documentId = extractDocumentId(session);
-        String clientId = extractQueryParam(session, "clientId");
-        long lastKnownVersion = extractLongQueryParam(session, "lastKnownVersion", 0L);
+        try {
+            String documentId = extractDocumentId(session);
+            String clientId = extractQueryParam(session, "clientId");
+            String token = extractQueryParam(session, "token");
+            long lastKnownVersion = extractLongQueryParam(session, "lastKnownVersion", 0L);
 
-        if (clientId == null || clientId.isBlank()) {
-            session.close(CloseStatus.BAD_DATA.withReason("clientId is required"));
-            return;
+            if (documentId == null || documentId.isBlank()) {
+                session.close(CloseStatus.BAD_DATA.withReason("documentId is required"));
+                return;
+            }
+
+            if (token == null || token.isBlank() || !jwtService.isTokenValid(token)) {
+                session.close(CloseStatus.NOT_ACCEPTABLE.withReason("Valid JWT token is required"));
+                return;
+            }
+
+            String emailFromToken = jwtService.extractEmail(token);
+
+            if (emailFromToken == null || emailFromToken.isBlank()) {
+                session.close(CloseStatus.NOT_ACCEPTABLE.withReason("Invalid JWT subject"));
+                return;
+            }
+
+            if (clientId == null || clientId.isBlank()) {
+                clientId = emailFromToken;
+            }
+
+            if (lastKnownVersion < 0) {
+                session.close(CloseStatus.BAD_DATA.withReason("lastKnownVersion cannot be negative"));
+                return;
+            }
+
+            CollaborativeDocument document = documentRepository.findById(documentId)
+                    .orElseThrow(() -> new DocumentNotFoundException(documentId));
+
+            sessionManager.addSession(
+                    documentId,
+                    clientId,
+                    session,
+                    lastKnownVersion
+            );
+
+            Set<String> activeClients = sessionManager.getActiveClients(documentId);
+
+            sessionManager.sendToSession(
+                    session,
+                    WebSocketServerMessage.connected(
+                            documentId,
+                            clientId,
+                            lastKnownVersion,
+                            activeClients
+                    )
+            );
+
+            sessionManager.sendToSession(
+                    session,
+                    WebSocketServerMessage.documentSync(document)
+            );
+
+            WebSocketServerMessage joinedMessage =
+                    WebSocketServerMessage.clientJoined(
+                            documentId,
+                            clientId,
+                            sessionManager.getActiveClients(documentId)
+                    );
+
+            sessionManager.broadcastToDocument(documentId, joinedMessage);
+
+        } catch (DocumentNotFoundException ex) {
+            session.close(CloseStatus.NOT_ACCEPTABLE.withReason(ex.getMessage()));
+        } catch (Exception ex) {
+            session.close(CloseStatus.SERVER_ERROR.withReason(ex.getMessage()));
         }
-
-        CollaborativeDocument document = documentRepository.findById(documentId)
-                .orElseThrow(() -> new DocumentNotFoundException(documentId));
-
-        sessionManager.addSession(
-                documentId,
-                clientId,
-                session,
-                lastKnownVersion
-        );
-
-        Set<String> activeClients = sessionManager.getActiveClients(documentId);
-
-        WebSocketServerMessage connectedMessage =
-                WebSocketServerMessage.connected(
-                        documentId,
-                        clientId,
-                        lastKnownVersion,
-                        activeClients
-                );
-
-        sessionManager.sendToSession(session, connectedMessage);
-
-        WebSocketServerMessage syncMessage =
-                WebSocketServerMessage.documentSync(document);
-
-        sessionManager.sendToSession(session, syncMessage);
-
-        WebSocketServerMessage joinedMessage =
-                WebSocketServerMessage.clientJoined(
-                        documentId,
-                        clientId,
-                        activeClients
-                );
-
-        sessionManager.broadcastToDocument(documentId, joinedMessage);
     }
+
 
     @Override
     protected void handleTextMessage(
@@ -135,7 +199,7 @@ public class DocumentWebSocketHandler extends TextWebSocketHandler {
                     session,
                     documentId,
                     clientIdFromUrl,
-                    "Unsupported messageType"
+                    "Unsupported messageType. Supported values: OPERATION, PRESENCE"
             );
 
         } catch (Exception ex) {
@@ -179,25 +243,10 @@ public class DocumentWebSocketHandler extends TextWebSocketHandler {
             Throwable exception
     ) throws Exception {
         if (session != null && session.isOpen()) {
-            session.close(CloseStatus.SERVER_ERROR);
+            session.close(CloseStatus.SERVER_ERROR.withReason("Transport error"));
         }
     }
 
-    private void sendError(
-            WebSocketSession session,
-            String documentId,
-            String clientId,
-            String errorMessage
-    ) throws Exception {
-        WebSocketServerMessage error =
-                WebSocketServerMessage.error(
-                        documentId,
-                        clientId,
-                        errorMessage
-                );
-
-        sessionManager.sendToSession(session, error);
-    }
     private void handleOperationMessage(
             WebSocketSession session,
             String documentId,
@@ -218,31 +267,20 @@ public class DocumentWebSocketHandler extends TextWebSocketHandler {
         OperationResponse operationResponse =
                 operationService.applyOperation(documentId, operationRequest);
 
+        sessionManager.updateLastKnownVersion(
+                session.getId(),
+                operationResponse.getServerVersion()
+        );
+
         WebSocketServerMessage operationAppliedMessage =
                 WebSocketServerMessage.operationApplied(
                         operationResponse,
                         sessionManager.getActiveClients(documentId)
                 );
+
         sessionManager.broadcastToDocument(documentId, operationAppliedMessage);
     }
 
-    private String extractDocumentId(WebSocketSession session) {
-        URI uri = session.getUri();
-
-        if (uri == null) {
-            throw new IllegalArgumentException("WebSocket URI is missing");
-        }
-
-        String path = uri.getPath();
-
-        if (path == null || path.isBlank()) {
-            throw new IllegalArgumentException("WebSocket path is missing");
-        }
-
-        String[] parts = path.split("/");
-
-        return parts[parts.length - 1];
-    }
     private void handlePresenceMessage(
             WebSocketSession session,
             String documentId,
@@ -273,6 +311,50 @@ public class DocumentWebSocketHandler extends TextWebSocketHandler {
         );
     }
 
+    private void sendError(
+            WebSocketSession session,
+            String documentId,
+            String clientId,
+            String errorMessage
+    ) throws Exception {
+        WebSocketServerMessage error =
+                WebSocketServerMessage.error(
+                        documentId,
+                        clientId,
+                        errorMessage == null ? "Unknown error" : errorMessage
+                );
+
+        sessionManager.sendToSession(session, error);
+    }
+
+    private String extractDocumentId(WebSocketSession session) {
+        URI uri = session.getUri();
+
+        if (uri == null) {
+            throw new IllegalArgumentException("WebSocket URI is missing");
+        }
+
+        String path = uri.getPath();
+
+        if (path == null || path.isBlank()) {
+            throw new IllegalArgumentException("WebSocket path is missing");
+        }
+
+        String prefix = "/ws/documents/";
+
+        if (!path.startsWith(prefix)) {
+            throw new IllegalArgumentException("Invalid WebSocket path: " + path);
+        }
+
+        String documentId = path.substring(prefix.length());
+
+        if (documentId.contains("/")) {
+            documentId = documentId.substring(0, documentId.indexOf("/"));
+        }
+
+        return decode(documentId);
+    }
+
     private String extractQueryParam(
             WebSocketSession session,
             String paramName
@@ -288,13 +370,32 @@ public class DocumentWebSocketHandler extends TextWebSocketHandler {
         for (String queryParam : queryParams) {
             String[] keyValue = queryParam.split("=", 2);
 
-            if (keyValue.length == 2 && keyValue[0].equals(paramName)) {
-                return keyValue[1];
+            if (keyValue.length == 2 && decode(keyValue[0]).equals(paramName)) {
+                return decode(keyValue[1]);
             }
         }
 
         return null;
     }
+
+    private long extractLongQueryParam(
+            WebSocketSession session,
+            String paramName,
+            long defaultValue
+    ) {
+        String value = extractQueryParam(session, paramName);
+
+        if (value == null || value.isBlank()) {
+            return defaultValue;
+        }
+
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException ex) {
+            return defaultValue;
+        }
+    }
+
     private void validatePresenceMessage(
             WebSocketOperationMessage webSocketMessage
     ) {
@@ -319,21 +420,8 @@ public class DocumentWebSocketHandler extends TextWebSocketHandler {
             throw new IllegalArgumentException("Selection start cannot be greater than selection end");
         }
     }
-    private long extractLongQueryParam(
-            WebSocketSession session,
-            String paramName,
-            long defaultValue
-    ) {
-        String value = extractQueryParam(session, paramName);
 
-        if (value == null || value.isBlank()) {
-            return defaultValue;
-        }
-
-        try {
-            return Long.parseLong(value);
-        } catch (NumberFormatException ex) {
-            return defaultValue;
-        }
+    private String decode(String value) {
+        return URLDecoder.decode(value, StandardCharsets.UTF_8);
     }
 }

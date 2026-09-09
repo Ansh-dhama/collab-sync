@@ -1,215 +1,2040 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Real-time collaborative document editor">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CollabSpace</title>
-    <link rel="stylesheet" href="/style.css">
+
+    <style>
+        :root {
+          --bg: #eef2f7;
+          --surface: #ffffff;
+          --soft: #f8fafc;
+          --text: #172033;
+          --muted: #697386;
+          --border: #dfe5ee;
+          --primary: #2563eb;
+          --primary-dark: #1d4ed8;
+          --primary-soft: #e8f0ff;
+          --success: #16a34a;
+          --danger: #dc2626;
+          --warning: #d97706;
+          --shadow: 0 18px 48px rgba(15, 23, 42, 0.10);
+          --sidebar: 300px;
+          --header: 72px;
+          --toolbar: 52px;
+          --footer: 34px;
+        }
+
+        * { box-sizing: border-box; }
+
+        html, body {
+          height: 100%;
+          margin: 0;
+          overflow: hidden;
+          background: var(--bg);
+          color: var(--text);
+          font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+          -webkit-font-smoothing: antialiased;
+        }
+
+        button, input, select, textarea { font: inherit; }
+
+        button {
+          min-height: 36px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 7px;
+          padding: 0 13px;
+          border: 1px solid var(--border);
+          border-radius: 10px;
+          color: var(--text);
+          background: var(--surface);
+          cursor: pointer;
+          font-size: 13px;
+          font-weight: 750;
+          transition: 0.16s ease;
+        }
+
+        button:hover:not(:disabled) {
+          transform: translateY(-1px);
+          background: var(--soft);
+        }
+
+        button:disabled {
+          cursor: not-allowed;
+          opacity: 0.48;
+        }
+
+        button.primary {
+          color: #fff;
+          border-color: var(--primary);
+          background: var(--primary);
+          box-shadow: 0 8px 18px rgba(37, 99, 235, 0.20);
+        }
+
+        button.primary:hover:not(:disabled) { background: var(--primary-dark); }
+        button.danger { color: var(--danger); }
+
+        input, select, textarea {
+          border: 1px solid var(--border);
+          border-radius: 10px;
+          background: var(--surface);
+          color: var(--text);
+        }
+
+        input:focus, select:focus, textarea:focus {
+          outline: 3px solid rgba(37, 99, 235, 0.14);
+          border-color: var(--primary);
+        }
+
+        .app {
+          height: 100%;
+          display: grid;
+          grid-template-rows: var(--header) 1fr;
+        }
+
+        .topbar {
+          display: grid;
+          grid-template-columns: minmax(240px, 1fr) minmax(320px, 1.3fr) minmax(430px, 1fr);
+          align-items: center;
+          gap: 20px;
+          padding: 0 24px;
+          border-bottom: 1px solid var(--border);
+          background: rgba(255, 255, 255, 0.96);
+          box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+          z-index: 10;
+        }
+
+        .brand {
+          display: flex;
+          align-items: center;
+          gap: 13px;
+          min-width: 0;
+        }
+
+        .brand-mark {
+          width: 44px;
+          height: 44px;
+          display: grid;
+          place-items: center;
+          border-radius: 15px;
+          color: white;
+          background: linear-gradient(145deg, #2563eb, #7c3aed);
+          box-shadow: 0 10px 24px rgba(37, 99, 235, 0.25);
+          font-size: 21px;
+          font-weight: 900;
+        }
+
+        .brand strong {
+          display: block;
+          font-size: 18px;
+          letter-spacing: -0.02em;
+        }
+
+        .brand span {
+          display: block;
+          margin-top: 2px;
+          color: var(--muted);
+          font-size: 12px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .title-area { text-align: center; }
+
+        .doc-title {
+          width: 100%;
+          height: 36px;
+          padding: 0 12px;
+          border-color: transparent;
+          background: transparent;
+          font-size: 17px;
+          font-weight: 800;
+          text-align: center;
+        }
+
+        .doc-title:hover, .doc-title:focus {
+          border-color: var(--border);
+          background: var(--soft);
+        }
+
+        .save-state {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          margin-top: 2px;
+          color: var(--muted);
+          font-size: 11px;
+          font-weight: 600;
+        }
+
+        .save-dot {
+          width: 7px;
+          height: 7px;
+          border-radius: 999px;
+          background: #94a3b8;
+        }
+
+        .save-dot.saved { background: var(--success); }
+        .save-dot.syncing { background: var(--warning); animation: pulse 1s infinite; }
+        .save-dot.error { background: var(--danger); }
+
+        .top-actions {
+          display: flex;
+          justify-content: flex-end;
+          align-items: center;
+          gap: 9px;
+        }
+
+        .connection-pill {
+          min-height: 34px;
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 0 12px;
+          border-radius: 999px;
+          font-size: 12px;
+          font-weight: 850;
+          text-transform: capitalize;
+        }
+
+        .connection-pill.online { color: #137235; background: #eaf8ef; }
+        .connection-pill.connecting { color: #9a5a00; background: #fff7e6; }
+        .connection-pill.offline { color: #9f1d1d; background: #fff0f0; }
+
+        .status-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 999px;
+          background: currentColor;
+        }
+
+        .connecting .status-dot { animation: pulse 1s infinite; }
+
+        .user-chip {
+          min-height: 36px;
+          display: none;
+          align-items: center;
+          gap: 8px;
+          padding: 0 10px;
+          border: 1px solid var(--border);
+          border-radius: 999px;
+          background: var(--soft);
+          color: var(--text);
+          font-size: 12px;
+          font-weight: 800;
+          max-width: 190px;
+        }
+
+        .user-chip.show { display: inline-flex; }
+
+        .user-avatar {
+          width: 24px;
+          height: 24px;
+          display: grid;
+          place-items: center;
+          border-radius: 50%;
+          color: white;
+          background: var(--primary);
+          font-size: 10px;
+          font-weight: 900;
+          flex: 0 0 auto;
+        }
+
+        .user-name {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .workspace {
+          min-height: 0;
+          display: grid;
+          grid-template-columns: var(--sidebar) 1fr;
+        }
+
+        .sidebar {
+          min-width: 0;
+          overflow-y: auto;
+          padding: 18px;
+          border-right: 1px solid var(--border);
+          background: var(--surface);
+        }
+
+        .panel {
+          margin-bottom: 18px;
+          padding: 15px;
+          border: 1px solid var(--border);
+          border-radius: 18px;
+          background: var(--surface);
+        }
+
+        .panel-title {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 13px;
+          font-size: 12px;
+          font-weight: 900;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+        }
+
+        label {
+          display: block;
+          margin-bottom: 12px;
+        }
+
+        label span {
+          display: block;
+          margin-bottom: 6px;
+          color: var(--muted);
+          font-size: 12px;
+          font-weight: 750;
+        }
+
+        label input {
+          width: 100%;
+          height: 38px;
+          padding: 0 11px;
+        }
+
+        .input-action { position: relative; }
+        .input-action input { padding-right: 42px; }
+
+        .input-action button {
+          position: absolute;
+          right: 4px;
+          top: 4px;
+          width: 30px;
+          min-height: 30px;
+          padding: 0;
+          border: 0;
+          background: transparent;
+          color: var(--muted);
+        }
+
+        .action-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 8px;
+        }
+
+        .panel-note {
+          margin: 12px 0 0;
+          color: var(--muted);
+          font-size: 12px;
+          line-height: 1.45;
+        }
+    .badge {
+          min-width: 24px;
+          height: 22px;
+          display: inline-flex;
+          justify-content: center;
+          align-items: center;
+          padding: 0 8px;
+          border-radius: 999px;
+          color: var(--primary);
+          background: var(--primary-soft);
+          font-size: 11px;
+        }
+
+        .people-list, .activity-list {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .empty {
+          padding: 12px;
+          border: 1px dashed #cbd5e1;
+          border-radius: 12px;
+          color: var(--muted);
+          background: var(--soft);
+          text-align: center;
+          font-size: 12px;
+        }
+
+        .person {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          min-height: 44px;
+          padding: 8px 10px;
+          border-radius: 14px;
+          background: var(--soft);
+        }
+
+        .avatar {
+          width: 30px;
+          height: 30px;
+          flex: 0 0 auto;
+          display: grid;
+          place-items: center;
+          border-radius: 999px;
+          color: white;
+          font-size: 11px;
+          font-weight: 900;
+        }
+
+        .person strong {
+          display: block;
+          max-width: 190px;
+          overflow: hidden;
+          white-space: nowrap;
+          text-overflow: ellipsis;
+          font-size: 12px;
+        }
+
+        .person span {
+          display: block;
+          margin-top: 2px;
+          color: var(--muted);
+          font-size: 10px;
+        }
+
+        .activity-item {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 10px;
+          border-left: 3px solid var(--primary);
+          border-radius: 12px;
+          color: var(--primary-dark);
+          background: var(--primary-soft);
+          font-size: 12px;
+        }
+    .editor-pane {
+          min-width: 0;
+          min-height: 0;
+          display: grid;
+          grid-template-rows: var(--toolbar) 1fr var(--footer);
+        }
+
+        .editor-toolbar {
+          display: flex;
+          align-items: center;
+          gap: 9px;
+          padding: 0 18px;
+          border-bottom: 1px solid var(--border);
+          background: rgba(255, 255, 255, 0.92);
+          backdrop-filter: blur(12px);
+        }
+
+        .editor-toolbar select {
+          height: 34px;
+          padding: 0 12px;
+        }
+
+        .toolbar-spacer { flex: 1; }
+
+        .health {
+          display: inline-flex;
+          align-items: center;
+          gap: 7px;
+          color: var(--muted);
+          font-size: 12px;
+          font-weight: 650;
+        }
+
+        .paper-scroll {
+          overflow: auto;
+          padding: 38px 24px 64px;
+        }
+
+        .paper {
+          width: min(816px, calc(100vw - var(--sidebar) - 72px));
+          min-height: 1056px;
+          margin: 0 auto;
+          padding: 82px 86px;
+          border: 1px solid rgba(203, 213, 225, 0.75);
+          border-radius: 6px;
+          background: var(--surface);
+          box-shadow: var(--shadow);
+        }
+
+        #editor {
+          width: 100%;
+          min-height: 880px;
+          padding: 0;
+          border: 0;
+          outline: 0;
+          resize: none;
+          overflow: hidden;
+          color: #202938;
+          background: transparent;
+          font-family: Inter, Arial, sans-serif;
+          font-size: 16px;
+          line-height: 1.72;
+          tab-size: 4;
+          caret-color: var(--primary);
+        }
+
+        #editor::placeholder { color: #a1a9b7; }
+
+        .footer {
+          display: flex;
+          justify-content: flex-end;
+          align-items: center;
+          gap: 18px;
+          padding: 0 18px;
+          border-top: 1px solid var(--border);
+          color: var(--muted);
+          background: var(--surface);
+          font-size: 11px;
+          font-weight: 650;
+        }
+
+        .toast-region {
+          position: fixed;
+          right: 18px;
+          bottom: 18px;
+          z-index: 1000;
+          display: flex;
+          flex-direction: column;
+          gap: 9px;
+        }
+
+        .toast {
+          min-width: 280px;
+          max-width: 420px;
+          padding: 13px 14px;
+          border: 1px solid var(--border);
+          border-left: 4px solid var(--primary);
+          border-radius: 14px;
+          background: rgba(255, 255, 255, 0.98);
+          box-shadow: var(--shadow);
+          font-size: 13px;
+          animation: toast-in 0.2s ease;
+        }
+
+        .toast.success { border-left-color: var(--success); }
+        .toast.error { border-left-color: var(--danger); }
+        .toast.warning { border-left-color: var(--warning); }
+
+        .auth-backdrop {
+          position: fixed;
+          inset: 0;
+          z-index: 2000;
+          display: none;
+          place-items: center;
+          padding: 20px;
+          background:
+            radial-gradient(circle at 15% 15%, rgba(37, 99, 235, 0.18), transparent 30%),
+            radial-gradient(circle at 85% 20%, rgba(124, 58, 237, 0.18), transparent 28%),
+            rgba(15, 23, 42, 0.55);
+          backdrop-filter: blur(5px);
+        }
+
+        .auth-backdrop.show { display: grid; }
+
+        .auth-card {
+          width: min(440px, 100%);
+          padding: 26px;
+          border-radius: 24px;
+          background: white;
+          box-shadow: 0 30px 80px rgba(15, 23, 42, 0.28);
+        }
+
+        .auth-header {
+          text-align: center;
+          margin-bottom: 20px;
+        }
+
+        .auth-logo {
+          width: 52px;
+          height: 52px;
+          display: grid;
+          place-items: center;
+          margin: 0 auto 12px;
+          border-radius: 17px;
+          color: white;
+          background: linear-gradient(145deg, #2563eb, #7c3aed);
+          font-size: 24px;
+          font-weight: 900;
+        }
+
+        .auth-header h1 {
+          margin: 0;
+          font-size: 24px;
+          letter-spacing: -0.03em;
+        }
+
+        .auth-header p {
+          margin: 7px 0 0;
+          color: var(--muted);
+          font-size: 13px;
+          line-height: 1.5;
+        }
+
+        .auth-tabs {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 7px;
+          padding: 5px;
+          margin-bottom: 18px;
+          border-radius: 14px;
+          background: var(--soft);
+        }
+
+        .auth-tab {
+          border: 0;
+          box-shadow: none;
+          background: transparent;
+        }
+
+        .auth-tab.active {
+          color: white;
+          background: var(--primary);
+        }
+
+        .auth-form { display: none; }
+        .auth-form.active { display: block; }
+
+        .auth-actions {
+          display: flex;
+          gap: 9px;
+          margin-top: 6px;
+        }
+
+        .auth-note {
+          margin-top: 14px;
+          color: var(--muted);
+          font-size: 11px;
+          line-height: 1.45;
+          text-align: center;
+        }
+
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.35; }
+        }
+
+        @keyframes toast-in {
+          from { opacity: 0; transform: translateY(8px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+
+        @media (max-width: 1120px) {
+          :root { --sidebar: 284px; }
+          .topbar { grid-template-columns: minmax(210px, 1fr) minmax(230px, 1fr) auto; }
+          .brand span { display: none; }
+          .paper { padding: 64px 56px; }
+          .user-chip { display: none !important; }
+        }
+
+        @media (max-width: 840px) {
+          html, body { overflow: auto; }
+          .app { min-height: 100%; display: block; }
+          .topbar { height: auto; grid-template-columns: 1fr; padding: 14px; }
+          .top-actions { justify-content: flex-start; flex-wrap: wrap; }
+          .workspace { display: block; }
+          .sidebar { border-right: 0; border-bottom: 1px solid var(--border); }
+          .editor-pane { min-height: 760px; }
+          .paper { width: calc(100vw - 28px); min-height: 760px; padding: 42px 26px; }
+          #editor { min-height: 650px; }
+          .footer { justify-content: flex-start; flex-wrap: wrap; height: auto; min-height: 34px; padding: 8px 14px; }
+        }
+    </style>
 </head>
+
 <body>
-<div class="app-shell">
-    <header class="app-header">
+<div class="app">
+    <header class="topbar">
         <div class="brand">
-            <div class="brand-mark" aria-hidden="true">
-                <svg viewBox="0 0 24 24" role="img">
-                    <path d="M7 3.75h7.1L19 8.65v11.6H7z"></path>
-                    <path class="brand-fold" d="M14.1 3.75v4.9H19"></path>
-                    <path class="brand-line" d="M10 12h6M10 15h6M10 18h4"></path>
-                </svg>
-            </div>
-            <div class="brand-copy">
+            <div class="brand-mark">C</div>
+            <div>
                 <strong>CollabSpace</strong>
-                <span>Real-time collaborative editor</span>
+                <span>Secure real-time document collaboration</span>
             </div>
         </div>
 
-        <div class="header-document">
-            <input
-                    id="documentTitle"
-                    class="document-title"
-                    value="Untitled document"
-                    aria-label="Document title"
-                    autocomplete="off"
-            >
+        <div class="title-area">
+            <input id="documentTitle" class="doc-title" value="Untitled document" aria-label="Document title">
             <div class="save-state">
-                <span id="saveStateIcon" class="save-state-icon"></span>
+                <span id="saveDot" class="save-dot"></span>
                 <span id="saveState">Ready</span>
             </div>
         </div>
 
-        <div class="header-actions">
-            <div id="connectionBadge" class="connection-badge offline">
+        <div class="top-actions">
+            <div id="connectionPill" class="connection-pill offline">
                 <span class="status-dot"></span>
-                <span id="connectionStatus">Offline</span>
+                <span id="connectionText">Offline</span>
             </div>
-            <button id="connectButton" class="button button-primary" type="button">
-                Connect
-            </button>
-            <button id="disconnectButton" class="button button-ghost" type="button" disabled>
-                Disconnect
-            </button>
+
+            <div id="userChip" class="user-chip">
+                <div id="userAvatar" class="user-avatar">U</div>
+                <span id="userName" class="user-name">Guest</span>
+            </div>
+
+            <button id="authBtn" class="primary">Login</button>
+            <button id="logoutBtn" class="danger" style="display:none;">Logout</button>
+            <button id="connectBtn" class="primary">▶ Connect</button>
+            <button id="disconnectBtn" disabled>■ Disconnect</button>
         </div>
     </header>
 
     <div class="workspace">
         <aside class="sidebar">
-            <section class="sidebar-section">
-                <div class="section-heading">
-                    <span>Document</span>
-                </div>
+            <section class="panel">
+                <div class="panel-title">Document</div>
 
-                <label class="field">
+                <label>
                     <span>Document ID</span>
-                    <div class="input-with-action">
-                        <input id="documentId" placeholder="Create or paste an ID" autocomplete="off">
-                        <button id="copyDocumentIdButton" class="icon-button" type="button"
-                                aria-label="Copy document ID" title="Copy document ID">
-                            <svg viewBox="0 0 24 24" aria-hidden="true">
-                                <path d="M9 8.5h9.5V18H9z"></path>
-                                <path d="M5.5 5H15v3.5M5.5 5v9.5H9"></path>
-                            </svg>
-                        </button>
+                    <div class="input-action">
+                        <input id="documentId" placeholder="Create or paste document ID">
+                        <button id="copyDocBtn" title="Copy document ID">⧉</button>
                     </div>
                 </label>
 
-                <label class="field">
+                <label>
                     <span>Client ID</span>
-                    <input id="clientId" autocomplete="off">
+                    <input id="clientId">
                 </label>
 
-                <div class="button-row">
-                    <button id="createButton" class="button button-primary button-block" type="button">
-                        New document
-                    </button>
-                    <button id="loadButton" class="button button-secondary button-block" type="button">
-                        Load
-                    </button>
+                <div class="action-grid">
+                    <button id="createBtn" class="primary">＋ New</button>
+                    <button id="loadBtn">↻ Load</button>
                 </div>
+
+                <p class="panel-note">
+                    Share the document ID with another signed-in user to collaborate live.
+                </p>
             </section>
-
-            <section class="sidebar-section">
-                <div class="section-heading">
-                    <span>Session</span>
-                    <span id="sessionVersionBadge" class="version-badge">v0</span>
-                </div>
-
-                <div class="metric-grid">
-                    <div class="metric-card">
-                        <span class="metric-label">Words</span>
-                        <strong id="wordCount">0</strong>
-                    </div>
-                    <div class="metric-card">
-                        <span class="metric-label">Characters</span>
-                        <strong id="characterCount">0</strong>
-                    </div>
-                    <div class="metric-card">
-                        <span class="metric-label">Pending</span>
-                        <strong id="pendingCount">0</strong>
-                    </div>
-                    <div class="metric-card">
-                        <span class="metric-label">Version</span>
-                        <strong id="currentVersion">0</strong>
-                    </div>
-                </div>
-            </section>
-
-            <section class="sidebar-section">
-                <div class="section-heading">
+            <section class="panel">
+                <div class="panel-title">
                     <span>Collaborators</span>
-                    <span id="activeClientCount" class="count-badge">0</span>
+                    <span id="clientCount" class="badge">0</span>
                 </div>
-                <div id="activeClients" class="collaborator-list">
-                    <div class="empty-state">No active collaborators</div>
-                </div>
-            </section>
-
-            <section class="sidebar-section presence-section">
-                <div class="section-heading">
-                    <span>Live activity</span>
-                </div>
-                <div id="presenceList" class="presence-list">
-                    <div class="empty-state">No recent activity</div>
+                <div id="activeClients" class="people-list">
+                    <div class="empty">No active collaborators</div>
                 </div>
             </section>
 
-            <details class="activity-panel">
-                <summary>
-                    <span>Activity log</span>
-                    <span class="chevron">⌄</span>
-                </summary>
-                <div id="logs" class="logs" aria-live="polite"></div>
-            </details>
+            <section class="panel">
+                <div class="panel-title">Live Activity</div>
+                <div id="presenceList" class="activity-list">
+                    <div class="empty">No recent activity</div>
+                </div>
+            </section>
         </aside>
 
-        <main class="editor-area">
-            <div class="editor-toolbar" role="toolbar" aria-label="Editor toolbar">
-                <div class="toolbar-group">
-                    <select id="fontSelect" aria-label="Font">
-                        <option value="Inter, Arial, sans-serif">Inter</option>
-                        <option value="Arial, sans-serif">Arial</option>
-                        <option value="Georgia, serif">Georgia</option>
-                        <option value="'Courier New', monospace">Courier New</option>
-                    </select>
-                    <select id="fontSizeSelect" aria-label="Font size">
-                        <option value="14">14</option>
-                        <option value="16" selected>16</option>
-                        <option value="18">18</option>
-                        <option value="20">20</option>
-                    </select>
-                </div>
+        <main class="editor-pane">
+            <div class="editor-toolbar">
+                <select id="fontSelect" aria-label="Font">
+                    <option value="Inter, Arial, sans-serif">Inter</option>
+                    <option value="Arial, sans-serif">Arial</option>
+                    <option value="Georgia, serif">Georgia</option>
+                    <option value="'Courier New', monospace">Courier New</option>
+                </select>
 
-                <div class="toolbar-divider"></div>
-
-                <div class="toolbar-group">
-                    <button id="decreaseIndentButton" class="toolbar-button" type="button"
-                            title="Decrease indent" aria-label="Decrease indent">−</button>
-                    <button id="increaseIndentButton" class="toolbar-button" type="button"
-                            title="Increase indent" aria-label="Increase indent">+</button>
-                </div>
+                <select id="fontSize" aria-label="Font size">
+                    <option value="14">14</option>
+                    <option value="16" selected>16</option>
+                    <option value="18">18</option>
+                    <option value="20">20</option>
+                </select>
 
                 <div class="toolbar-spacer"></div>
 
-                <div class="document-health">
-                    <span id="healthIndicator" class="health-indicator"></span>
+                <div class="health">
+                    <span>☁</span>
                     <span id="healthText">Document not loaded</span>
                 </div>
             </div>
 
-            <div class="editor-scroll">
-                <section class="paper" aria-label="Document editor">
-                    <textarea
-                            id="editor"
-                            spellcheck="true"
-                            placeholder="Start writing your document…"
-                            aria-label="Document content"
-                    ></textarea>
+            <div class="paper-scroll">
+                <section class="paper">
+                    <textarea id="editor" placeholder="Start writing your document…" spellcheck="true"></textarea>
                 </section>
             </div>
 
-            <footer class="editor-footer">
-                <span id="cursorPosition">Line 1, column 1</span>
-                <span id="selectionStatus">No selection</span>
+            <footer class="footer">
+                <span id="cursorInfo">Line 1, column 1</span>
+                <span id="selectionInfo">No selection</span>
+                <span id="documentInfo">Version 0</span>
                 <span>Plain text</span>
             </footer>
         </main>
     </div>
 </div>
 
-<div id="toastRegion" class="toast-region" aria-live="assertive" aria-atomic="true"></div>
+<div id="authModal" class="auth-backdrop">
+    <div class="auth-card">
+        <div class="auth-header">
+            <div class="auth-logo">C</div>
+            <h1>Welcome to CollabSpace</h1>
+            <p>Login or create an account to start real-time collaborative editing.</p>
+        </div>
 
-<div id="confirmDialog" class="dialog-backdrop hidden" role="dialog" aria-modal="true"
-     aria-labelledby="dialogTitle">
-    <div class="dialog">
-        <h2 id="dialogTitle">Unsynced changes</h2>
-        <p id="dialogMessage">You have changes that have not been synchronized.</p>
-        <div class="dialog-actions">
-            <button id="dialogCancel" class="button button-secondary" type="button">Cancel</button>
-            <button id="dialogConfirm" class="button button-danger" type="button">Continue</button>
+        <div class="auth-tabs">
+            <button id="loginTab" class="auth-tab active">Login</button>
+            <button id="registerTab" class="auth-tab">Create account</button>
+        </div>
+
+        <form id="loginForm" class="auth-form active">
+            <label>
+                <span>Email</span>
+                <input id="loginEmail" type="email" placeholder="ansh@example.com" autocomplete="email">
+            </label>
+
+            <label>
+                <span>Password</span>
+                <input id="loginPassword" type="password" placeholder="Password" autocomplete="current-password">
+            </label>
+
+            <div class="auth-actions">
+                <button type="submit" class="primary" style="flex:1;">Login</button>
+            </div>
+        </form>
+
+        <form id="registerForm" class="auth-form">
+            <label>
+                <span>Name</span>
+                <input id="registerName" placeholder="Ansh Dhama" autocomplete="name">
+            </label>
+
+            <label>
+                <span>Email</span>
+                <input id="registerEmail" type="email" placeholder="ansh@example.com" autocomplete="email">
+            </label>
+
+            <label>
+                <span>Password</span>
+                <input id="registerPassword" type="password" placeholder="Minimum 6 characters" autocomplete="new-password">
+            </label>
+
+            <div class="auth-actions">
+                <button type="submit" class="primary" style="flex:1;">Create account</button>
+            </div>
+        </form>
+
+        <div class="auth-note">
+            This frontend calls your backend JWT APIs: POST /api/auth/register and POST /api/auth/login.
         </div>
     </div>
 </div>
 
-<script src="/app.js" defer></script>
+<div id="toastRegion" class="toast-region"></div>
+
+<script>
+    const API_BASE = window.location.origin;
+    const WS_BASE = (window.location.protocol === "https:" ? "wss://" : "ws://") + window.location.host;
+
+    const FLUSH_DELAY_MS = 420;
+    const PRESENCE_DELAY_MS = 700;
+    const AUTO_RESIZE_DELAY_MS = 120;
+
+    const state = {
+      socket: null,
+      documentId: localStorage.getItem("collab.lastDocumentId") || "",
+      clientId: sessionStorage.getItem("collab.clientId") || "",
+      currentVersion: 0,
+      acknowledgedContent: "",
+      previousEditorContent: "",
+      operationInFlight: null,
+      pendingOps: [],
+      applyingRemote: false,
+      manualDisconnect: false,
+      reconnectAttempts: 0,
+      reconnectTimer: null,
+      flushTimer: null,
+      presenceTimer: null,
+      typingStopTimer: null,
+      resizeTimer: null,
+      presenceMap: new Map(),
+      currentUser: null,
+      offlineBaseVersion: null,
+      offlineBaseContent: null,
+      lastSentPresenceAt: 0,
+      composing: false
+    };
+
+    const $ = (id) => document.getElementById(id);
+
+    const dom = {
+      title: $("documentTitle"),
+      docId: $("documentId"),
+      clientId: $("clientId"),
+      createBtn: $("createBtn"),
+      loadBtn: $("loadBtn"),
+      connectBtn: $("connectBtn"),
+      disconnectBtn: $("disconnectBtn"),
+      copyDocBtn: $("copyDocBtn"),
+      connectionPill: $("connectionPill"),
+      connectionText: $("connectionText"),
+      saveDot: $("saveDot"),
+      saveState: $("saveState"),
+      clientCount: $("clientCount"),
+      activeClients: $("activeClients"),
+      presenceList: $("presenceList"),
+      logs: null,
+      editor: $("editor"),
+      fontSelect: $("fontSelect"),
+      fontSize: $("fontSize"),
+      healthText: $("healthText"),
+      cursorInfo: $("cursorInfo"),
+      selectionInfo: $("selectionInfo"),
+      documentInfo: $("documentInfo"),
+      toastRegion: $("toastRegion"),
+      authBtn: $("authBtn"),
+      logoutBtn: $("logoutBtn"),
+      userChip: $("userChip"),
+      userAvatar: $("userAvatar"),
+      userName: $("userName"),
+      authModal: $("authModal"),
+      loginTab: $("loginTab"),
+      registerTab: $("registerTab"),
+      loginForm: $("loginForm"),
+      registerForm: $("registerForm"),
+      loginEmail: $("loginEmail"),
+      loginPassword: $("loginPassword"),
+      registerName: $("registerName"),
+      registerEmail: $("registerEmail"),
+      registerPassword: $("registerPassword")
+    };
+
+    init();
+
+    function init() {
+      loadCurrentUser();
+
+      if (!state.clientId) {
+        state.clientId = state.currentUser
+          ? userToClientId(state.currentUser)
+          : "guest-" + Math.random().toString(36).slice(2, 10);
+
+        sessionStorage.setItem("collab.clientId", state.clientId);
+      }
+
+      dom.docId.value = state.documentId;
+      dom.clientId.value = state.clientId;
+
+      loadOfflineDraftMeta();
+      loadPending();
+      bindEvents();
+      updateConnection("offline");
+      updateSaveState("ready", "Ready");
+      updateHealth("Document not loaded");
+      updateDocumentInfo();
+      updateCursor();
+      autoResizeNow();
+      renderAuthState();
+      log("Frontend initialized");
+
+      if (!state.currentUser) {
+        openAuthModal();
+      }
+    }
+
+    function bindEvents() {
+      dom.createBtn.addEventListener("click", safeAction(createDocument));
+      dom.loadBtn.addEventListener("click", safeAction(loadDocument));
+      dom.connectBtn.addEventListener("click", safeAction(connectWebSocket));
+      dom.disconnectBtn.addEventListener("click", () => disconnectWebSocket(true));
+      dom.copyDocBtn.addEventListener("click", safeAction(copyDocumentId));
+
+      dom.authBtn.addEventListener("click", openAuthModal);
+      dom.logoutBtn.addEventListener("click", logoutUser);
+      dom.loginTab.addEventListener("click", () => switchAuthTab("login"));
+      dom.registerTab.addEventListener("click", () => switchAuthTab("register"));
+      dom.loginForm.addEventListener("submit", loginUser);
+      dom.registerForm.addEventListener("submit", registerUser);
+
+      dom.docId.addEventListener("change", () => {
+        state.documentId = dom.docId.value.trim();
+        localStorage.setItem("collab.lastDocumentId", state.documentId);
+        loadOfflineDraftMeta();
+        loadPending();
+      });
+
+      dom.clientId.addEventListener("change", () => {
+        state.clientId = dom.clientId.value.trim();
+        sessionStorage.setItem("collab.clientId", state.clientId);
+        loadOfflineDraftMeta();
+        loadPending();
+      });
+
+      dom.editor.addEventListener("compositionstart", () => {
+        state.composing = true;
+      });
+
+      dom.editor.addEventListener("compositionend", () => {
+        state.composing = false;
+        handleEditorInput();
+      });
+
+      dom.editor.addEventListener("input", handleEditorInput);
+      dom.editor.addEventListener("keyup", handleCursorActivity);
+      dom.editor.addEventListener("click", handleCursorActivity);
+      dom.editor.addEventListener("select", handleCursorActivity);
+      dom.editor.addEventListener("blur", () => sendPresence(false, true));
+
+      dom.fontSelect.addEventListener("change", () => {
+        dom.editor.style.fontFamily = dom.fontSelect.value;
+      });
+
+      dom.fontSize.addEventListener("change", () => {
+        dom.editor.style.fontSize = dom.fontSize.value + "px";
+        autoResizeNow();
+      });
+
+      window.addEventListener("online", () => {
+        showToast("Internet restored.", "success");
+        if (!isSocketOpen() && state.documentId && !state.manualDisconnect) connectWebSocket();
+      });
+
+      window.addEventListener("offline", () => {
+        prepareOfflineDraftBase();
+        updateConnection("offline");
+        updateHealth("Working offline");
+        showToast("You are offline. Edits will be batched locally.", "warning");
+      });
+
+      window.addEventListener("beforeunload", (event) => {
+        if (state.operationInFlight || hasOfflineDraftChange() || dom.editor.value !== state.acknowledgedContent) {
+          event.preventDefault();
+          event.returnValue = "";
+        }
+      });
+    }
+
+    function safeAction(fn) {
+      return async function () {
+        try {
+          await fn();
+        } catch (error) {
+          if (error && error.message) {
+            showToast(error.message, "error");
+          }
+        }
+      };
+    }
+
+    // ======================
+    // JWT Auth
+    // ======================
+
+    function openAuthModal() {
+      dom.authModal.classList.add("show");
+    }
+
+    function closeAuthModal() {
+      dom.authModal.classList.remove("show");
+    }
+
+    function switchAuthTab(tab) {
+      const login = tab === "login";
+      dom.loginTab.classList.toggle("active", login);
+      dom.registerTab.classList.toggle("active", !login);
+      dom.loginForm.classList.toggle("active", login);
+      dom.registerForm.classList.toggle("active", !login);
+    }
+
+    function loadCurrentUser() {
+      try {
+        state.currentUser = JSON.parse(localStorage.getItem("collab.currentUser") || "null");
+      } catch {
+        state.currentUser = null;
+      }
+    }
+
+    function saveCurrentUser(user) {
+      if (!user || !user.token) {
+        throw new Error("Token not received from backend.");
+      }
+
+      state.currentUser = user;
+      localStorage.setItem("collab.currentUser", JSON.stringify(user));
+
+      state.clientId = userToClientId(user);
+      dom.clientId.value = state.clientId;
+      sessionStorage.setItem("collab.clientId", state.clientId);
+
+      renderAuthState();
+    }
+
+    function renderAuthState() {
+      if (!state.currentUser) {
+        dom.userChip.classList.remove("show");
+        dom.authBtn.style.display = "inline-flex";
+        dom.logoutBtn.style.display = "none";
+        return;
+      }
+
+      dom.userChip.classList.add("show");
+      dom.userAvatar.textContent = initials(state.currentUser.name || state.currentUser.email || "U");
+      dom.userName.textContent = state.currentUser.name || state.currentUser.email;
+      dom.authBtn.style.display = "none";
+      dom.logoutBtn.style.display = "inline-flex";
+    }
+
+    async function registerUser(event) {
+      event.preventDefault();
+
+      const name = dom.registerName.value.trim();
+      const email = dom.registerEmail.value.trim().toLowerCase();
+      const password = dom.registerPassword.value;
+
+      if (!name || !email || !password) {
+        showToast("Name, email and password are required.", "error");
+        return;
+      }
+
+      if (password.length < 6) {
+        showToast("Password should be at least 6 characters.", "error");
+        return;
+      }
+
+      try {
+        const user = await fetchJson(API_BASE + "/api/auth/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, email, password })
+        });
+
+        saveCurrentUser(user);
+        closeAuthModal();
+        showToast("Account created.", "success");
+        log("User registered: " + email);
+      } catch (error) {
+        showToast(error.message, "error");
+        log("Register failed: " + error.message);
+      }
+    }
+
+    async function loginUser(event) {
+      event.preventDefault();
+
+      const email = dom.loginEmail.value.trim().toLowerCase();
+      const password = dom.loginPassword.value;
+
+      if (!email || !password) {
+        showToast("Email and password are required.", "error");
+        return;
+      }
+
+      try {
+        const user = await fetchJson(API_BASE + "/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password })
+        });
+
+        saveCurrentUser(user);
+        closeAuthModal();
+        showToast("Logged in.", "success");
+        log("User logged in: " + email);
+      } catch (error) {
+        showToast(error.message, "error");
+        log("Login failed: " + error.message);
+      }
+    }
+
+    function logoutUser() {
+      disconnectWebSocket(true);
+      localStorage.removeItem("collab.currentUser");
+      state.currentUser = null;
+      renderAuthState();
+      openAuthModal();
+      showToast("Logged out.", "success");
+      log("User logged out");
+    }
+
+    function userToClientId(user) {
+      const raw = (user.email || user.name || "user").toLowerCase();
+      return raw.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "user";
+    }
+
+    function requireLogin() {
+      if (!state.currentUser || !state.currentUser.token) {
+        openAuthModal();
+        throw new Error("Please login first.");
+      }
+    }
+
+    // ======================
+    // Document APIs
+    // ======================
+
+    async function createDocument() {
+      requireLogin();
+
+      const title = dom.title.value.trim() || "Untitled document";
+      const clientId = getClientId();
+
+      setBusy(dom.createBtn, true, "Creating…");
+      updateSaveState("syncing", "Creating…");
+
+      try {
+        const data = await fetchJson(API_BASE + "/api/documents", {
+          method: "POST",
+          headers: apiHeaders(),
+          body: JSON.stringify({ title, initialContent: "", createdBy: clientId })
+        });
+
+        const newId = data.documentId || data.id;
+        if (!newId) throw new Error("Backend did not return document ID.");
+
+        state.documentId = newId;
+        dom.docId.value = newId;
+        localStorage.setItem("collab.lastDocumentId", newId);
+
+        state.currentVersion = Number(data.currentVersion || 0);
+        state.pendingOps = [];
+        state.offlineBaseVersion = null;
+        state.offlineBaseContent = null;
+        persistPending();
+        clearOfflineDraftMeta();
+
+        setEditorContent(data.currentContent || "", true, false);
+        updatePending();
+        updateSaveState("saved", "Created");
+        updateHealth("Document ready");
+        updateDocumentInfo();
+        showToast("Document created.", "success");
+        log("Document created: " + newId);
+      } catch (error) {
+        updateSaveState("error", "Create failed");
+        updateHealth("Create failed");
+        showToast(error.message, "error");
+        log("Create failed: " + error.message);
+      } finally {
+        setBusy(dom.createBtn, false, "＋ New");
+      }
+    }
+
+    async function loadDocument() {
+      requireLogin();
+
+      const documentId = getDocumentId();
+
+      if (!documentId) {
+        showToast("Enter document ID first.", "error");
+        return;
+      }
+
+      setBusy(dom.loadBtn, true, "Loading…");
+      updateSaveState("syncing", "Loading…");
+
+      try {
+        const data = await fetchJson(API_BASE + "/api/documents/" + encodeURIComponent(documentId), {
+          method: "GET",
+          headers: apiHeaders()
+        });
+
+        state.documentId = documentId;
+        state.currentVersion = Number(data.currentVersion || 0);
+        localStorage.setItem("collab.lastDocumentId", documentId);
+
+        dom.title.value = data.title || "Untitled document";
+
+        loadOfflineDraftMeta();
+        loadPending();
+
+        const draft = localStorage.getItem(draftKey());
+
+        if (hasOfflineDraftChange() && draft !== null) {
+          setEditorContent(draft, false, false);
+          updateSaveState("syncing", "Pending offline draft");
+          updateHealth("Offline draft restored");
+        } else {
+          setEditorContent(data.currentContent || "", true, false);
+          updateSaveState("saved", "Loaded");
+          updateHealth("Document loaded");
+        }
+
+        updateDocumentInfo();
+        showToast("Document loaded.", "success");
+        log("Document loaded at version " + state.currentVersion);
+      } catch (error) {
+        updateSaveState("error", "Load failed");
+        updateHealth("Load failed");
+        showToast(error.message, "error");
+        log("Load failed: " + error.message);
+      } finally {
+        setBusy(dom.loadBtn, false, "↻ Load");
+      }
+    }
+
+    // ======================
+    // WebSocket
+    // ======================
+
+    function connectWebSocket() {
+      requireLogin();
+
+      const documentId = getDocumentId();
+      const clientId = getClientId();
+
+      if (!documentId || !clientId) {
+        showToast("Document ID and Client ID are required.", "error");
+        return;
+      }
+
+      if (state.socket && [WebSocket.OPEN, WebSocket.CONNECTING].includes(state.socket.readyState)) {
+        showToast("WebSocket is already active.", "warning");
+        return;
+      }
+
+      state.documentId = documentId;
+      state.clientId = clientId;
+      state.manualDisconnect = false;
+      localStorage.setItem("collab.lastDocumentId", documentId);
+      sessionStorage.setItem("collab.clientId", clientId);
+
+      const tokenParam = state.currentUser && state.currentUser.token
+        ? "&token=" + encodeURIComponent(state.currentUser.token)
+        : "";
+
+      const url = WS_BASE + "/ws/documents/" + encodeURIComponent(documentId)
+        + "?clientId=" + encodeURIComponent(clientId)
+        + "&lastKnownVersion=" + state.currentVersion
+        + tokenParam;
+
+      updateConnection("connecting");
+      updateHealth("Connecting…");
+      log("Connecting WebSocket…");
+
+      const socket = new WebSocket(url);
+      state.socket = socket;
+
+      socket.onopen = () => {
+        state.reconnectAttempts = 0;
+        updateConnection("online");
+        updateHealth("Live collaboration active");
+        showToast("Connected.", "success");
+        log("WebSocket connected");
+      };
+
+      socket.onmessage = (event) => {
+        try {
+          handleServerMessage(JSON.parse(event.data));
+        } catch {
+          log("Invalid server message");
+        }
+      };
+
+      socket.onclose = () => {
+        if (state.socket === socket) state.socket = null;
+
+        if (state.operationInFlight) {
+          prepareOfflineDraftBase();
+          state.operationInFlight = null;
+        }
+
+        updateConnection("offline");
+
+        if (!state.manualDisconnect && navigator.onLine) {
+          scheduleReconnect();
+        } else {
+          prepareOfflineDraftBase();
+          updateHealth("Working offline");
+        }
+
+        log("WebSocket disconnected");
+      };
+
+      socket.onerror = () => {
+        updateHealth("Connection problem");
+        log("WebSocket error");
+      };
+    }
+
+    function disconnectWebSocket(manual) {
+      state.manualDisconnect = manual;
+      clearTimeout(state.reconnectTimer);
+
+      if (state.socket) {
+        prepareOfflineDraftBase();
+        state.socket.close(1000, "Manual disconnect");
+        state.socket = null;
+      }
+
+      updateConnection("offline");
+      updateHealth("Disconnected");
+    }
+
+    function scheduleReconnect() {
+      clearTimeout(state.reconnectTimer);
+      state.reconnectAttempts++;
+      const delay = Math.min(1000 * Math.pow(2, state.reconnectAttempts - 1), 15000);
+
+      updateConnection("connecting");
+      updateHealth("Reconnecting in " + Math.ceil(delay / 1000) + "s");
+      log("Reconnect scheduled in " + delay + "ms");
+
+      state.reconnectTimer = setTimeout(() => {
+        if (!state.manualDisconnect && navigator.onLine) connectWebSocket();
+      }, delay);
+    }
+
+    function handleServerMessage(message) {
+      log("Received " + message.messageType);
+
+      if (message.messageType === "CONNECTED") {
+        renderActiveClients(message.activeClients || []);
+        return;
+      }
+
+      if (message.messageType === "DOCUMENT_SYNC") {
+        const serverContent = message.currentContent || "";
+        state.currentVersion = Number(message.currentVersion || message.serverVersion || 0);
+
+        if (hasOfflineDraftChange()) {
+          syncOfflineDraft();
+        } else if (!state.operationInFlight && dom.editor.value === state.acknowledgedContent) {
+          setEditorContent(serverContent, true, true);
+          updateSaveState("saved", "Up to date");
+          updateHealth("Live collaboration active");
+        } else {
+          state.acknowledgedContent = serverContent;
+          updateSaveState("syncing", "Merging changes…");
+          scheduleFlush();
+        }
+
+        updateDocumentInfo();
+        return;
+      }
+
+      if (message.messageType === "OPERATION_APPLIED") {
+        const inFlight = state.operationInFlight;
+        const ownAck = inFlight && inFlight.operationId === message.operationId;
+        const serverContent = message.currentContent || "";
+        const version = Number(message.currentVersion || message.serverVersion || state.currentVersion);
+
+        state.currentVersion = version;
+        state.acknowledgedContent = serverContent;
+
+        if (ownAck) {
+          const localChangedAfterSend = dom.editor.value !== inFlight.desiredContentAtSend;
+          state.operationInFlight = null;
+
+          if (!localChangedAfterSend) {
+            setEditorContent(serverContent, true, true);
+            updateSaveState("saved", "Up to date");
+          } else {
+            updateSaveState("syncing", "Sending latest changes…");
+            scheduleFlush();
+          }
+        } else {
+          if (!state.operationInFlight && dom.editor.value === state.previousEditorContent && dom.editor.value === state.acknowledgedContent) {
+            setEditorContent(serverContent, true, true);
+          } else if (!state.operationInFlight && dom.editor.value === serverContent) {
+            setEditorContent(serverContent, true, true);
+          } else if (!state.operationInFlight && dom.editor.value === state.acknowledgedContent) {
+            setEditorContent(serverContent, true, true);
+          } else {
+            updateSaveState("syncing", "Remote change received");
+            scheduleFlush();
+          }
+        }
+
+        renderActiveClients(message.activeClients || []);
+        updateDocumentInfo();
+        return;
+      }
+
+      if (message.messageType === "CLIENT_JOINED" || message.messageType === "CLIENT_LEFT") {
+        renderActiveClients(message.activeClients || []);
+        return;
+      }
+
+      if (message.messageType === "PRESENCE_UPDATE") {
+        updatePresence(message);
+        return;
+      }
+
+      if (message.messageType === "ERROR") {
+        prepareOfflineDraftBase();
+        state.operationInFlight = null;
+        updateSaveState("error", "Sync failed");
+        updateHealth("Server rejected a change");
+        showToast(message.message || "Server error", "error");
+        log("Server error: " + (message.message || "Unknown"));
+      }
+    }
+
+    // ======================
+    // Fast editor sync
+    // ======================
+
+    function handleEditorInput() {
+      if (state.applyingRemote || state.composing) return;
+
+      const newContent = dom.editor.value;
+      state.previousEditorContent = newContent;
+
+      updateCursor();
+      scheduleAutoResize();
+
+      if (!state.documentId) {
+        updateSaveState("syncing", "Local draft");
+        return;
+      }
+
+      localStorage.setItem(draftKey(), newContent);
+
+      if (!isSocketOpen()) {
+        prepareOfflineDraftBase();
+        updateSaveState("syncing", "Offline draft saved");
+        updateHealth("Editing offline");
+        updateDocumentInfo();
+        return;
+      }
+
+      updateSaveState("syncing", "Typing…");
+      scheduleFlush();
+      throttledPresence(true);
+    }
+
+    function scheduleFlush() {
+      clearTimeout(state.flushTimer);
+      state.flushTimer = setTimeout(flushDesiredContent, FLUSH_DELAY_MS);
+    }
+
+    function flushDesiredContent() {
+      if (!isSocketOpen()) {
+        prepareOfflineDraftBase();
+        return;
+      }
+
+      if (state.operationInFlight) {
+        return;
+      }
+
+      const desired = dom.editor.value;
+      const ops = calculateOperations(state.acknowledgedContent, desired);
+
+      if (ops.length === 0) {
+        updateSaveState("saved", "Up to date");
+        clearLocalDraftIfClean();
+        return;
+      }
+
+      const firstOperation = ops[0];
+
+      // Very important: insertedText can be " ", "\\n", "\\t" etc.
+      // Do not trim it. Spaces are valid document content.
+      const msg = buildOperationMessage(firstOperation, state.currentVersion);
+      msg.desiredContentAtSend = desired;
+
+      state.operationInFlight = msg;
+      state.socket.send(JSON.stringify({
+        messageType: msg.messageType,
+        operationId: msg.operationId,
+        baseVersion: msg.baseVersion,
+        type: msg.type,
+        position: msg.position,
+        text: msg.text,
+        length: msg.length
+      }));
+
+      updateSaveState("syncing", "Saving…");
+      log("Sent " + msg.type + " at " + msg.position + (msg.text ? " length " + msg.text.length : ""));
+    }
+
+    function calculateOperations(oldText, newText) {
+      if (oldText === newText) return [];
+
+      let start = 0;
+      while (start < oldText.length && start < newText.length && oldText[start] === newText[start]) {
+        start++;
+      }
+
+      let oldEnd = oldText.length - 1;
+      let newEnd = newText.length - 1;
+
+      while (oldEnd >= start && newEnd >= start && oldText[oldEnd] === newText[newEnd]) {
+        oldEnd--;
+        newEnd--;
+      }
+
+      const deletedLength = Math.max(0, oldEnd - start + 1);
+      const insertedText = newText.substring(start, newEnd + 1);
+      const ops = [];
+
+      if (deletedLength > 0) {
+        ops.push({ type: "DELETE", position: start, text: null, length: deletedLength });
+      }
+
+      if (insertedText.length > 0) {
+        ops.push({ type: "INSERT", position: start, text: insertedText, length: null });
+      }
+
+      return ops;
+    }
+
+    function buildOperationMessage(op, baseVersion, operationId) {
+      return {
+        messageType: "OPERATION",
+        operationId: operationId || createOperationId(),
+        baseVersion,
+        type: op.type,
+        position: op.position,
+        text: op.text,
+        length: op.length,
+        desiredContentAtSend: null
+      };
+    }
+
+    function createOperationId() {
+      return getClientId() + "-op-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
+    }
+
+    // ======================
+    // Offline draft batching
+    // ======================
+
+    function prepareOfflineDraftBase() {
+      if (!state.documentId) return;
+
+      if (state.offlineBaseVersion === null) {
+        state.offlineBaseVersion = state.currentVersion;
+        state.offlineBaseContent = state.acknowledgedContent;
+        persistOfflineDraftMeta();
+      }
+
+      localStorage.setItem(draftKey(), dom.editor.value);
+    }
+
+    function hasOfflineDraftChange() {
+      const draft = localStorage.getItem(draftKey());
+      if (draft === null) return false;
+
+      if (state.offlineBaseContent === null || state.offlineBaseVersion === null) return false;
+
+      return draft !== state.offlineBaseContent;
+    }
+
+    async function syncOfflineDraft() {
+      if (!state.documentId || !hasOfflineDraftChange()) return;
+
+      const draft = localStorage.getItem(draftKey()) || "";
+      const baseContent = state.offlineBaseContent || "";
+      const baseVersion = state.offlineBaseVersion === null ? state.currentVersion : state.offlineBaseVersion;
+      const ops = calculateOperations(baseContent, draft);
+
+      if (ops.length === 0) {
+        clearOfflineDraftMeta();
+        updateSaveState("saved", "Up to date");
+        return;
+      }
+
+      const pendingOperations = ops.map((op, index) => ({
+        operationId: createOperationId(),
+        baseVersion: baseVersion + index,
+        type: op.type,
+        position: op.position,
+        text: op.text,
+        length: op.length
+      }));
+
+      updateSaveState("syncing", "Syncing offline draft…");
+      updateHealth("Merging offline changes");
+
+      try {
+        const response = await fetchJson(API_BASE + "/api/documents/" + encodeURIComponent(state.documentId) + "/sync", {
+          method: "POST",
+          headers: apiHeaders(),
+          body: JSON.stringify({
+            clientId: getClientId(),
+            lastKnownServerVersion: baseVersion,
+            pendingOperations
+          })
+        });
+
+        const results = Array.isArray(response.results) ? response.results : [];
+        const failed = results.find((result) => result.status === "FAILED");
+
+        if (failed) {
+          throw new Error(failed.message || "Offline sync failed.");
+        }
+
+        state.pendingOps = [];
+        state.currentVersion = Number(response.latestServerVersion || state.currentVersion);
+        clearOfflineDraftMeta();
+        setEditorContent(response.currentContent || draft, true, false);
+        updateDocumentInfo();
+        updateSaveState("saved", "Offline changes synced");
+        updateHealth("Live collaboration active");
+        showToast("Offline changes synchronized.", "success");
+      } catch (error) {
+        updateSaveState("error", "Offline sync failed");
+        updateHealth("Offline changes need attention");
+        showToast(error.message, "error");
+        log("Offline sync failed: " + error.message);
+      }
+    }
+
+    function persistOfflineDraftMeta() {
+      if (!state.documentId || !state.clientId) return;
+
+      localStorage.setItem(offlineMetaKey(), JSON.stringify({
+        baseVersion: state.offlineBaseVersion,
+        baseContent: state.offlineBaseContent
+      }));
+    }
+
+    function loadOfflineDraftMeta() {
+      try {
+        const raw = localStorage.getItem(offlineMetaKey());
+        const parsed = raw ? JSON.parse(raw) : null;
+
+        if (parsed && typeof parsed.baseVersion === "number") {
+          state.offlineBaseVersion = parsed.baseVersion;
+          state.offlineBaseContent = parsed.baseContent || "";
+        } else {
+          state.offlineBaseVersion = null;
+          state.offlineBaseContent = null;
+        }
+      } catch {
+        state.offlineBaseVersion = null;
+        state.offlineBaseContent = null;
+      }
+    }
+
+    function clearOfflineDraftMeta() {
+      localStorage.removeItem(draftKey());
+      localStorage.removeItem(offlineMetaKey());
+      state.offlineBaseVersion = null;
+      state.offlineBaseContent = null;
+    }
+
+    function clearLocalDraftIfClean() {
+      if (!hasOfflineDraftChange() && dom.editor.value === state.acknowledgedContent) {
+        localStorage.removeItem(draftKey());
+      }
+    }
+
+    function loadPending() {
+      // Kept only for backward compatibility with old frontend pending queue.
+      state.pendingOps = [];
+      updatePending();
+    }
+
+    function persistPending() {
+      // New optimized frontend uses draft batching instead of per-key pending queue.
+    }
+
+    // ======================
+    // Presence
+    // ======================
+
+    function throttledPresence(typing) {
+      const now = Date.now();
+      if (now - state.lastSentPresenceAt < PRESENCE_DELAY_MS) {
+        clearTimeout(state.presenceTimer);
+        state.presenceTimer = setTimeout(() => sendPresence(typing, true), PRESENCE_DELAY_MS);
+        return;
+      }
+
+      sendPresence(typing, false);
+    }
+
+    function sendPresence(typing, force) {
+      if (!isSocketOpen()) return;
+
+      const now = Date.now();
+
+      if (!force && now - state.lastSentPresenceAt < PRESENCE_DELAY_MS) {
+        return;
+      }
+
+      state.lastSentPresenceAt = now;
+
+      state.socket.send(JSON.stringify({
+        messageType: "PRESENCE",
+        cursorPosition: dom.editor.selectionStart,
+        typing: Boolean(typing),
+        selectionStart: dom.editor.selectionStart,
+        selectionEnd: dom.editor.selectionEnd
+      }));
+
+      if (typing) {
+        clearTimeout(state.typingStopTimer);
+        state.typingStopTimer = setTimeout(() => sendPresence(false, true), 1100);
+      }
+    }
+
+    function handleCursorActivity() {
+      updateCursor();
+      throttledPresence(false);
+    }
+
+    function updatePresence(message) {
+      if (!message.clientId || message.clientId === getClientId()) return;
+
+      state.presenceMap.set(message.clientId, {
+        typing: Boolean(message.typing),
+        cursorPosition: Number(message.cursorPosition || 0),
+        updatedAt: Date.now()
+      });
+
+      renderPresence();
+
+      setTimeout(() => {
+        const item = state.presenceMap.get(message.clientId);
+        if (item && Date.now() - item.updatedAt > 4500) {
+          state.presenceMap.delete(message.clientId);
+          renderPresence();
+        }
+      }, 4600);
+    }
+
+    function renderPresence() {
+      dom.presenceList.innerHTML = "";
+
+      if (state.presenceMap.size === 0) {
+        dom.presenceList.innerHTML = '<div class="empty">No recent activity</div>';
+        return;
+      }
+
+      for (const [clientId, info] of state.presenceMap.entries()) {
+        const div = document.createElement("div");
+        div.className = "activity-item";
+        div.innerHTML = "<span>●</span><span>" + escapeHtml(clientId) + " " + (info.typing ? "is typing" : "cursor at " + info.cursorPosition) + "</span>";
+        dom.presenceList.appendChild(div);
+      }
+    }
+
+    function renderActiveClients(clients) {
+      const active = Array.isArray(clients) ? clients : [];
+      dom.clientCount.textContent = active.length;
+      dom.activeClients.innerHTML = "";
+
+      if (active.length === 0) {
+        dom.activeClients.innerHTML = '<div class="empty">No active collaborators</div>';
+        return;
+      }
+
+      active.forEach((client, index) => {
+        const div = document.createElement("div");
+        div.className = "person";
+        div.innerHTML =
+          '<div class="avatar" style="background:' + avatarColor(client, index) + '">' + initials(client) + '</div>' +
+          '<div><strong>' + escapeHtml(client === getClientId() ? client + " (you)" : client) + '</strong><span>Online</span></div>';
+        dom.activeClients.appendChild(div);
+      });
+    }
+
+    // ======================
+    // UI helpers
+    // ======================
+
+    function setEditorContent(value, remote, preserveCursor) {
+      const start = dom.editor.selectionStart;
+      const end = dom.editor.selectionEnd;
+
+      state.applyingRemote = true;
+      dom.editor.value = value || "";
+      state.previousEditorContent = dom.editor.value;
+
+      if (remote) {
+        state.acknowledgedContent = dom.editor.value;
+      }
+
+      if (preserveCursor && document.activeElement === dom.editor) {
+        const safeStart = Math.min(start, dom.editor.value.length);
+        const safeEnd = Math.min(end, dom.editor.value.length);
+        dom.editor.setSelectionRange(safeStart, safeEnd);
+      }
+
+      state.applyingRemote = false;
+      updateCursor();
+      scheduleAutoResize();
+    }
+
+    function updateCursor() {
+      const cursor = dom.editor.selectionStart;
+      const before = dom.editor.value.slice(0, cursor);
+      const lines = before.split("\n");
+      const line = lines.length;
+      const column = lines[lines.length - 1].length + 1;
+      const selected = Math.abs(dom.editor.selectionEnd - dom.editor.selectionStart);
+
+      dom.cursorInfo.textContent = "Line " + line + ", column " + column;
+      dom.selectionInfo.textContent = selected > 0 ? selected + " selected" : "No selection";
+    }
+
+    function scheduleAutoResize() {
+      clearTimeout(state.resizeTimer);
+      state.resizeTimer = setTimeout(autoResizeNow, AUTO_RESIZE_DELAY_MS);
+    }
+
+    function autoResizeNow() {
+      dom.editor.style.height = "auto";
+      dom.editor.style.height = Math.max(880, dom.editor.scrollHeight) + "px";
+    }
+
+    function updateConnection(status) {
+      dom.connectionPill.className = "connection-pill " + status;
+      dom.connectionText.textContent = status;
+      dom.connectBtn.disabled = status !== "offline";
+      dom.disconnectBtn.disabled = status === "offline";
+    }
+
+    function updateSaveState(type, text) {
+      dom.saveDot.className = "save-dot";
+      if (type === "saved") dom.saveDot.classList.add("saved");
+      if (type === "syncing") dom.saveDot.classList.add("syncing");
+      if (type === "error") dom.saveDot.classList.add("error");
+      dom.saveState.textContent = text;
+    }
+
+    function updateHealth(text) {
+      dom.healthText.textContent = text;
+    }
+
+    function updateDocumentInfo() {
+      let info = "Version " + state.currentVersion;
+
+      if (hasOfflineDraftChange()) {
+        info += " • offline draft";
+      }
+
+      if (state.operationInFlight) {
+        info += " • saving";
+      }
+
+      dom.documentInfo.textContent = info;
+    }
+
+    function updatePending() {
+      updateDocumentInfo();
+    }
+
+    function pendingKey() {
+      return "collab.pending." + (state.documentId || "none") + "." + (state.clientId || "none");
+    }
+
+    function draftKey() {
+      return "collab.draft." + (state.documentId || "none") + "." + (state.clientId || "none");
+    }
+
+    function offlineMetaKey() {
+      return "collab.offlineBase." + (state.documentId || "none") + "." + (state.clientId || "none");
+    }
+
+    async function fetchJson(url, options = {}) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+
+      try {
+        const response = await fetch(url, { ...options, signal: controller.signal });
+        const contentType = response.headers.get("content-type") || "";
+        const body = contentType.includes("application/json") ? await response.json() : await response.text();
+
+        if (!response.ok) {
+          if (response.status === 401 || response.status === 403) {
+            localStorage.removeItem("collab.currentUser");
+            state.currentUser = null;
+            renderAuthState();
+            openAuthModal();
+          }
+
+          const message = typeof body === "object" ? (body.message || body.error || "Request failed") : body;
+          throw new Error(message || "Request failed with status " + response.status);
+        }
+
+        return body;
+      } catch (error) {
+        if (error.name === "AbortError") throw new Error("Request timeout.");
+        throw error;
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
+    function apiHeaders() {
+      const headers = { "Content-Type": "application/json" };
+
+      if (state.currentUser && state.currentUser.token) {
+        headers.Authorization = "Bearer " + state.currentUser.token;
+      }
+
+      return headers;
+    }
+
+    function isSocketOpen() {
+      return state.socket && state.socket.readyState === WebSocket.OPEN;
+    }
+
+    function getDocumentId() {
+      return dom.docId.value.trim();
+    }
+
+    function getClientId() {
+      return dom.clientId.value.trim();
+    }
+
+    async function copyDocumentId() {
+      if (!getDocumentId()) {
+        showToast("No document ID to copy.", "warning");
+        return;
+      }
+
+      await navigator.clipboard.writeText(getDocumentId());
+      showToast("Document ID copied.", "success");
+    }
+
+    function showToast(message, type) {
+      const toast = document.createElement("div");
+      toast.className = "toast " + (type || "info");
+      toast.textContent = message;
+      dom.toastRegion.appendChild(toast);
+      setTimeout(() => toast.remove(), 3600);
+    }
+
+    function log(message) {
+      // Production UI: internal logs are not shown on screen.
+      // Keep this function so debugging can be enabled later without changing core logic.
+      if (!dom.logs) {
+        return;
+      }
+
+      const time = new Date().toLocaleTimeString();
+
+      if (dom.logs.textContent === "No logs yet") {
+        dom.logs.textContent = "";
+      }
+
+      dom.logs.textContent = "[" + time + "] " + message + "\n" + dom.logs.textContent;
+    }
+
+    function setBusy(button, busy, label) {
+      button.disabled = busy;
+      button.textContent = label;
+    }
+
+    function avatarColor(value, index) {
+      const colors = ["#2563eb", "#7c3aed", "#db2777", "#0891b2", "#16a34a", "#d97706"];
+      let hash = index;
+      for (let i = 0; i < value.length; i++) {
+        hash = ((hash << 5) - hash) + value.charCodeAt(i);
+        hash |= 0;
+      }
+      return colors[Math.abs(hash) % colors.length];
+    }
+
+    function initials(value) {
+      const parts = String(value).split(/[-_\s]+/).filter(Boolean);
+      if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+      return String(value).slice(0, 2).toUpperCase();
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+</script>
 </body>
 </html>

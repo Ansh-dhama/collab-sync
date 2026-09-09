@@ -5,59 +5,80 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class DocumentStateService {
+
     public String applyOperation(
             String currentContent,
             OperationType type,
-            int position ,
-            String text ,
+            int position,
+            String text,
             Integer length
     ) {
-        String safeContent =currentContent==null?"":currentContent;
+        String safeContent = currentContent == null ? "" : currentContent;
+
+        if (type == null) {
+            throw new IllegalArgumentException("Operation type is required");
+        }
+
         if (type == OperationType.NO_OP) {
             return safeContent;
         }
-        if(type==OperationType.DELETE){
-            return applyDelete(safeContent,position,length);
-        }
-        if(type==OperationType.INSERT){
-            return applyInsert(safeContent,position,text);
+
+        if (type == OperationType.INSERT) {
+            return applyInsert(safeContent, position, text);
         }
 
-        throw new IllegalArgumentException("Invalid operation type");
+        if (type == OperationType.DELETE) {
+            return applyDelete(safeContent, position, length);
+        }
+
+        throw new IllegalArgumentException("Invalid operation type: " + type);
     }
-    public String applyInsert(String currentContent,int position,String text){
-          if(text==null || text.isEmpty()){
-              throw new IllegalArgumentException("Invalid text");
-          }
-        if (position < 0 || position > currentContent.length()) {
+
+    public String applyInsert(String currentContent, int position, String text) {
+        String safeContent = currentContent == null ? "" : currentContent;
+
+        // Space, tab and newline are valid text. Only null/empty is invalid.
+        if (text == null || text.isEmpty()) {
+            throw new IllegalArgumentException("Insert text is required");
+        }
+
+        if (position < 0 || position > safeContent.length()) {
             throw new IllegalArgumentException(
                     "Invalid insert position: " + position +
-                            ". Content length is: " + currentContent.length()
+                            ". Content length is: " + safeContent.length()
             );
-        }
-        return currentContent.substring(0,position) + text + currentContent.substring(position);
-    }
-    public String applyDelete(String currentContent, int position, Integer length){
-        if (length == null || length <= 0) {
-            throw new IllegalArgumentException("Length must be greater than 0 for DELETE operation");
         }
 
-        if (position < 0 || position >= currentContent.length()) {
+        return safeContent.substring(0, position)
+                + text
+                + safeContent.substring(position);
+    }
+
+    public String applyDelete(String currentContent, int position, Integer length) {
+        String safeContent = currentContent == null ? "" : currentContent;
+
+        if (length == null || length <= 0) {
+            throw new IllegalArgumentException("Delete length must be greater than zero");
+        }
+
+        if (position < 0 || position >= safeContent.length()) {
             throw new IllegalArgumentException(
                     "Invalid delete position: " + position +
-                            ". Content length is: " + currentContent.length()
+                            ". Content length is: " + safeContent.length()
             );
         }
-        int endPosition =  position + length;
-        if (endPosition > currentContent.length()) {
+
+        int endPosition = position + length;
+
+        if (endPosition > safeContent.length()) {
             throw new IllegalArgumentException(
                     "Delete range is invalid. Position: " + position +
                             ", length: " + length +
-                            ", content length: " + currentContent.length()
+                            ", content length: " + safeContent.length()
             );
         }
 
-        return currentContent.substring(0,position)+currentContent.substring(endPosition);
+        return safeContent.substring(0, position)
+                + safeContent.substring(endPosition);
     }
-
 }
