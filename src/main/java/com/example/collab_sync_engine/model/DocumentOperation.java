@@ -3,16 +3,23 @@ package com.example.collab_sync_engine.model;
 import com.example.collab_sync_engine.Enum.OperationType;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
+import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
 
 @Document(collection = "document_operations")
-@CompoundIndex(
-        name = "unique_operation_per_client_document",
-        def = "{'documentId': 1, 'clientId': 1, 'operationId': 1}",
-        unique = true
-)
+@CompoundIndexes({
+        @CompoundIndex(
+                name = "unique_operation_per_client_document",
+                def = "{'documentId': 1, 'clientId': 1, 'operationId': 1}",
+                unique = true
+        ),
+        @CompoundIndex(
+                name = "document_server_version_idx",
+                def = "{'documentId': 1, 'serverVersion': 1}"
+        )
+})
 public class DocumentOperation {
 
     @Id

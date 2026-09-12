@@ -153,10 +153,10 @@ public class OperationService {
 
                     CollaborativeDocument currentDocument = getDocumentOrThrow(documentId);
 
-                    if (batchBaseVersion > currentDocument.getCurrentVersion()) {
+                    if (pendingOperation.baseVersion() > currentDocument.getCurrentVersion()) {
                         throw new IllegalArgumentException(
                                 "Client offline baseVersion cannot be greater than server currentVersion. " +
-                                        "Client offline baseVersion: " + batchBaseVersion +
+                                        "Client offline baseVersion: " + pendingOperation.baseVersion() +
                                         ", server currentVersion: " + currentDocument.getCurrentVersion()
                         );
                     }
@@ -237,11 +237,18 @@ public class OperationService {
 
         OperationRequest operationToApply = operationRequest;
 
-        if (batchBaseVersion < document.getCurrentVersion()) {
+        /*
+         * IMPORTANT OFFLINE-SYNC RULE
+         *
+         * The offline operation must be transformed from its OWN baseVersion.
+         * Do not use the latest server version from reconnect DOCUMENT_SYNC as the base,
+         * otherwise stale offline changes may overwrite online user changes.
+         */
+        if (operationRequest.getBaseVersion() < document.getCurrentVersion()) {
             List<DocumentOperation> concurrentOperations =
                     operationRepository.findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(
                                     document.getId(),
-                                    batchBaseVersion
+                                    operationRequest.getBaseVersion()
                             )
                             .stream()
                             .filter(operation -> !batchOperationIds.contains(operation.getOperationId()))
@@ -251,6 +258,20 @@ public class OperationService {
                 throw new IllegalArgumentException(
                         "Cannot sync offline operation because document was reverted while client was offline. " +
                                 "Please refresh document and apply changes again."
+                );
+            }
+
+            /*
+             * Destructive offline deletes are dangerous when other users edited meanwhile.
+             * Example: User B offline deletes/replaces a range while User A inserts text online.
+             * A naive OT delete can remove User A's online text. So for offline sync we allow
+             * stale INSERT merge, but reject stale DELETE. Frontend then keeps both contents
+             * by appending an offline draft conflict block instead of overwriting online text.
+             */
+            if (operationRequest.getType() == OperationType.DELETE && !concurrentOperations.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "Offline delete conflicts with newer server changes. " +
+                                "Refresh the document or merge the offline draft manually."
                 );
             }
 

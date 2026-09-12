@@ -1,13 +1,15 @@
 package com.example.collab_sync_engine.exception;
 
 import com.mongodb.DuplicateKeyException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.time.Instant;
 import java.util.HashMap;
@@ -16,94 +18,73 @@ import java.util.Map;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    @ExceptionHandler(DocumentNotFoundException.class)
-    public ResponseEntity<Map<String, Object>> handleDocumentNotFound(
-            DocumentNotFoundException exception
-    ) {
-        Map<String, Object> error = new HashMap<>();
-        error.put("timestamp", Instant.now());
-        error.put("status", HttpStatus.NOT_FOUND.value());
-        error.put("error", "Document Not Found");
-        error.put("message", exception.getMessage());
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
+    @ExceptionHandler(DocumentNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleDocumentNotFound(DocumentNotFoundException exception) {
+        return error(HttpStatus.NOT_FOUND, "Document Not Found", exception.getMessage());
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<Map<String, Object>> handleIllegalArgumentException(
-            IllegalArgumentException exception
-    ) {
-        Map<String, Object> error = new HashMap<>();
-        error.put("timestamp", Instant.now());
-        error.put("status", HttpStatus.BAD_REQUEST.value());
-        error.put("error", "Bad Request");
-        error.put("message", exception.getMessage());
-
-        return ResponseEntity.badRequest().body(error);
+    public ResponseEntity<Map<String, Object>> handleIllegalArgumentException(IllegalArgumentException exception) {
+        return error(HttpStatus.BAD_REQUEST, "Bad Request", exception.getMessage());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<Map<String, Object>> handleValidationException(
-            MethodArgumentNotValidException exception
-    ) {
-        Map<String, Object> error = new HashMap<>();
-        error.put("timestamp", Instant.now());
-        error.put("status", HttpStatus.BAD_REQUEST.value());
-        error.put("error", "Validation Failed");
+    public ResponseEntity<Map<String, Object>> handleValidationException(MethodArgumentNotValidException exception) {
+        Map<String, Object> error = baseError(HttpStatus.BAD_REQUEST, "Validation Failed");
 
         Map<String, String> fieldErrors = new HashMap<>();
-
         exception.getBindingResult()
                 .getFieldErrors()
-                .forEach(fieldError ->
-                        fieldErrors.put(
-                                fieldError.getField(),
-                                fieldError.getDefaultMessage()
-                        )
-                );
+                .forEach(fieldError -> fieldErrors.put(fieldError.getField(), fieldError.getDefaultMessage()));
 
         error.put("fieldErrors", fieldErrors);
+        error.put("message", "Request validation failed.");
 
         return ResponseEntity.badRequest().body(error);
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
-    public ResponseEntity<Map<String, Object>> handleInvalidJsonOrEnum(
-            HttpMessageNotReadableException exception
-    ) {
-        Map<String, Object> error = new HashMap<>();
-        error.put("timestamp", Instant.now());
-        error.put("status", HttpStatus.BAD_REQUEST.value());
-        error.put("error", "Invalid Request Body");
-        error.put("message", "Invalid JSON format or invalid enum value. Operation type must be INSERT or DELETE.");
-
-        return ResponseEntity.badRequest().body(error);
+    public ResponseEntity<Map<String, Object>> handleInvalidJsonOrEnum(HttpMessageNotReadableException exception) {
+        return error(
+                HttpStatus.BAD_REQUEST,
+                "Invalid Request Body",
+                "Invalid JSON format or invalid enum value. Operation type must be INSERT or DELETE."
+        );
     }
 
     @ExceptionHandler(DuplicateKeyException.class)
-    public ResponseEntity<Map<String, Object>> handleDuplicateKeyException(
-            DuplicateKeyException exception
-    ) {
-        Map<String, Object> error = new HashMap<>();
-        error.put("timestamp", Instant.now());
-        error.put("status", HttpStatus.CONFLICT.value());
-        error.put("error", "Duplicate Operation");
-        error.put("message", "This operation has already been processed.");
+    public ResponseEntity<Map<String, Object>> handleDuplicateKeyException(DuplicateKeyException exception) {
+        return error(HttpStatus.CONFLICT, "Duplicate Operation", "This operation has already been processed.");
+    }
 
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(error);
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleStaticResourceNotFound(NoResourceFoundException exception) {
+        /*
+         * Missing favicon/assets should be a 404, not a backend 500.
+         * This makes frontend build/copy mistakes easier to understand.
+         */
+        return error(HttpStatus.NOT_FOUND, "Static Resource Not Found", exception.getMessage());
     }
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<Map<String, Object>> handleGenericException(
-            Exception exception
-    ) {
-        System.out.println(exception);
-        Map<String, Object> error = new HashMap<>();
-        error.put("timestamp", Instant.now());
-        error.put("status", HttpStatus.INTERNAL_SERVER_ERROR.value());
-        error.put("error", "Internal Server Error");
-        error.put("message", "Something went wrong. Please try again later.");
+    public ResponseEntity<Map<String, Object>> handleGenericException(Exception exception) {
+        log.error("Unhandled exception occurred", exception);
+        return error(HttpStatus.INTERNAL_SERVER_ERROR, "Internal Server Error", "Something went wrong. Please try again later.");
+    }
 
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+    private ResponseEntity<Map<String, Object>> error(HttpStatus status, String error, String message) {
+        Map<String, Object> body = baseError(status, error);
+        body.put("message", message);
+        return ResponseEntity.status(status).body(body);
+    }
+
+    private Map<String, Object> baseError(HttpStatus status, String error) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("timestamp", Instant.now());
+        body.put("status", status.value());
+        body.put("error", error);
+        return body;
     }
 }
